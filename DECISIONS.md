@@ -139,3 +139,19 @@ tab is open. It is not patient data. A unit test checks no patient text reaches 
 
 **D35. Pages with work in progress stay mounted** when the user navigates away, so moving to Restore names and
 back does not lose a review. The Activity log and Settings reload each time they are opened.
+
+## Packaging
+
+**D36. PyInstaller one-folder builds, unsigned.** One-folder starts faster than one-file and is easier to
+inspect. Builds are not code-signed (that needs paid certificates), so Windows SmartScreen and macOS
+Gatekeeper show a warning on first launch; the README explains how to open it. Optional heavy packages
+(spaCy, numpy, Pillow) are excluded: the desktop build is about 35 MB zipped, without NER.
+
+**D37. The frozen app keeps a console window.** It shows the address (with token) to open, and closing it
+stops Studio, which also clears the in-memory vault. This is clearer for non-technical users than a hidden
+background process.
+
+**D38. Docker: Studio listens on 0.0.0.0 inside the container** (required for port forwarding) with
+`--allow-network`, runs as a non-root user, and the docs always publish the port to `127.0.0.1` only.
+The data folder is created with the right owner before it is declared a volume (a bug found by running the
+image). A CI job builds the image and smoke-tests the token check and the non-root user.

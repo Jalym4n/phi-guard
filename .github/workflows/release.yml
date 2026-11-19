@@ -1,0 +1,54 @@
+name: Release builds
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pip install ".[studio]" pyinstaller
+      - name: Build UI, freeze with PyInstaller, smoke-test, zip
+        run: python packaging/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phi-guard-studio-${{ matrix.os }}
+          path: dist/phi-guard-studio-*.zip
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t phi-guard-studio:${{ github.ref_name }} .
+      - run: docker save phi-guard-studio:${{ github.ref_name }} | gzip > phi-guard-studio-docker.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phi-guard-studio-docker
+          path: phi-guard-studio-docker.tar.gz
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

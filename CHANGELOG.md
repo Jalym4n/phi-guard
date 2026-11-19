@@ -13,6 +13,9 @@ All notable changes to this project are documented here. Format based on
 - `output_scan.py`: check AI responses for leaked identifiers and unknown tokens.
 - `phi-guard batch`, `phi-guard output-scan`, `phi-guard eval` commands.
 - Benchmark (`eval/`): 700 synthetic documents, 640 injection snippets, held-out templates, Presidio baseline, `eval/RESULTS.md`.
+- phi-guard Studio: local web app (FastAPI + React) with remove, check, restore, batch, activity log, settings, help.
+- Studio security controls: loopback bind, per-launch token, Host/Origin checks, strict CSP, in-memory uploads, idle vault clearing, keychain key storage, encrypted key export.
+- Playwright E2E and axe accessibility tests; Windows/macOS/Linux PyInstaller builds and a Dockerfile.
 - Detection improvements from dev-split analysis: name cues and propagation, negative context for order/lot numbers, lowercase postal codes, more street types, confusable and leetspeak normalization, `task_replacement` injection rule.
 
 ## [0.1.0]
