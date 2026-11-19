@@ -117,6 +117,7 @@ test("upload a text PDF; a scanned PDF gets a friendly message", async ({ page }
 test("injection check: tampered document is red, normal policy is green", async ({ page }) => {
   await go(page, "Check a document");
   await page.getByTestId("check-file-input").setInputFiles(fixture("poisoned_doc.txt"));
+  await expect(page.getByLabel("Document to check")).toHaveValue(/Lab Requisitions/);
   await page.getByRole("button", { name: "Check this document" }).click();
   const verdict = page.locator("[data-verdict]");
   await expect(verdict).toHaveAttribute("data-verdict", "block");
@@ -127,6 +128,7 @@ test("injection check: tampered document is red, normal policy is green", async 
   await expect(page.getByTestId("cleaned")).toBeVisible();
 
   await page.getByTestId("check-file-input").setInputFiles(fixture("clean_policy.txt"));
+  await expect(page.getByLabel("Document to check")).toHaveValue(/Hand Hygiene/);
   await page.getByRole("button", { name: "Check this document" }).click();
   await expect(verdict).toHaveAttribute("data-verdict", "allow");
   await expect(verdict).toContainText("Looks safe");

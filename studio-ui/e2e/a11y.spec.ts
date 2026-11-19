@@ -15,6 +15,7 @@ for (const scheme of ["light", "dark"] as const) {
 
       await go(page, "Check a document");
       await page.getByTestId("check-file-input").setInputFiles(fixture("poisoned_doc.txt"));
+      await expect(page.getByLabel("Document to check")).toHaveValue(/Lab Requisitions/);
       await page.getByRole("button", { name: "Check this document" }).click();
       await expect(page.locator("[data-verdict]")).toBeVisible();
       await expectAccessible(page, "Check (result)");

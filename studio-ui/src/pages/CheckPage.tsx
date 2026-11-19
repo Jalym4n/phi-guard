@@ -51,6 +51,7 @@ export function CheckPage() {
 
   async function onFile(f: File) {
     setError(null);
+    setBusy(true);
     try {
       const r = await api.extract(f);
       setText(r.text);
@@ -58,6 +59,8 @@ export function CheckPage() {
       setResult(null);
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -92,7 +95,7 @@ export function CheckPage() {
         <div className="space-y-4">
           <TextArea id="check-text" label="Document to check" value={text} onChange={(v) => { setText(v); setFileName(null); }} rows={10} placeholder="Paste the document here…" />
           {fileName && <p>Loaded <strong>{fileName}</strong>.</p>}
-          <FileDrop onFile={onFile} testId="check-file-input" />
+          <FileDrop onFile={onFile} testId="check-file-input" busy={busy} />
           <div className="flex flex-wrap gap-3">
             <Button variant="primary" size="lg" onClick={check} disabled={busy}>
               <FileSearch aria-hidden className="h-5 w-5" /> {busy ? "Checking…" : "Check this document"}
