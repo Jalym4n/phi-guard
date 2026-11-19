@@ -27,6 +27,9 @@ STREET_TYPES = (
     "Street", "St", "Avenue", "Ave", "Road", "Rd", "Boulevard", "Blvd", "Drive", "Dr",
     "Court", "Ct", "Crescent", "Cres", "Lane", "Ln", "Way", "Place", "Pl",
     "Trail", "Trl", "Parkway", "Pkwy",
+    # Further Canada Post street types (added in v0.2 after dev-split analysis).
+    "Circle", "Cir", "Terrace", "Terr", "Gate", "Heights", "Hts", "Grove", "Line", "Sideroad", "Concession",
+    "Close", "Square", "Sq", "Highway", "Hwy", "Row", "Path", "Landing", "Gardens", "Crossing", "Mews",
 )  # fmt: skip
 
 _UNIT_WORD = r"(?:Unit|Suite|Ste\.?|Apt\.?|Apartment)"
@@ -39,7 +42,7 @@ _DIRECTION = r"(?:North|South|East|West|NE|NW|SE|SW|N|S|E|W)"
 ADDRESS_RE = re.compile(
     rf"(?<![\w#\-])(?:{_PRE_UNIT})?"
     rf"\d{{1,6}}[A-Za-z]?[ \t]+"
-    rf"{_WORD}(?:[ \t]+{_WORD}){{0,3}}?[ \t]+"
+    rf"{_WORD}(?:[ \t]+{_WORD}){{0,3}}[ \t]+"
     rf"(?:{_TYPE})\b\.?"
     rf"(?:[ \t]+{_DIRECTION}\b\.?)?"
     rf"(?:{_POST_UNIT})?"

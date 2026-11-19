@@ -101,6 +101,8 @@ class Detector:
     priority: int
     validator: Callable[[str], bool] | None = None
     confidence: float = 0.9
+    #: Skip numbers labelled as something harmless ("Order #", "Lot", "firmware").
+    negative_context: bool = False
 
     def find(self, text: str) -> Iterable[Finding]:
         for m in self.pattern.finditer(text):
@@ -111,7 +113,18 @@ class Detector:
             value = text[start:end]
             if self.validator is not None and not self.validator(value):
                 continue
+            if self.negative_context and _NEGATIVE_CONTEXT_RE.search(text[max(0, start - 30) : start]):
+                continue
             yield Finding(self.kind, start, end, value, self.confidence)
+
+
+#: Labels that mean "the number after me is not about a person".
+_NEGATIVE_CONTEXT_RE = re.compile(
+    r"\b(?:order|requisition|req|accession|lot|batch|invoice|ref(?:erence)?|confirmation|specimen|barcode|"
+    r"serial|firmware|version|ver|build|catalog(?:ue)?|item|sku|model|v)\.?"
+    r"\s*(?:#|no\.?|num(?:ber)?|id|code)?\s*[:#]?\s*$",
+    re.IGNORECASE,
+)
 
 
 _SEP = r"[ \-]?"
@@ -123,6 +136,13 @@ _DATE = (
 )
 _NAME_WORD = r"[A-Z][a-zA-Z'\-]+"
 _NAME = rf"{_NAME_WORD}(?:\s+[A-Z]\.)?(?:[ \t]+{_NAME_WORD}){{0,2}}"
+# "Whitfield, Eleanor" (surname first), common in charts and requisitions.
+_NAME_OR_REVERSED = rf"(?:{_NAME_WORD},[ \t]*{_NAME_WORD}(?:[ \t]+[A-Z]\.)?|{_NAME})"
+_NOT_TITLE = r"(?!(?:Dr|Mr|Mrs|Ms|Miss|Mx|Prof)\b)"
+_RELATION = (
+    r"(?:daughter|son|husband|wife|partner|spouse|sister|brother|mother|father|caregiver|friend|niece|nephew|"
+    r"grandson|granddaughter|guardian)"
+)
 
 DETECTORS: tuple[Detector, ...] = (
     Detector(
@@ -131,6 +151,7 @@ DETECTORS: tuple[Detector, ...] = (
         priority=100,
         validator=_valid_ohip,
         confidence=0.99,
+        negative_context=True,
     ),
     Detector(
         "SIN",
@@ -138,6 +159,7 @@ DETECTORS: tuple[Detector, ...] = (
         priority=95,
         validator=_valid_sin,
         confidence=0.99,
+        negative_context=True,
     ),
     Detector(
         "CREDIT_CARD",
@@ -145,6 +167,7 @@ DETECTORS: tuple[Detector, ...] = (
         priority=90,
         validator=_valid_card,
         confidence=0.99,
+        negative_context=True,
     ),
     Detector(
         "EMAIL",
@@ -155,7 +178,8 @@ DETECTORS: tuple[Detector, ...] = (
     Detector(
         "MRN",
         re.compile(
-            r"\b(?:MRN|Medical\s+Record\s+(?:Number|No\.?|#)|Chart\s*(?:Number|No\.?|#)|Patient\s+ID)"
+            r"\b(?:MRN|Medical\s+Record\s+(?:Number|No\.?|#)|Chart\s*(?:Number|No\.?|#)|Patient\s+ID|"
+            r"Hospital\s*(?:Number|No\.?|#)|Health\s+Record\s*(?:Number|No\.?|#))"
             r"\s*[:#]?\s*(?P<value>[A-Z]{0,3}-?\d{5,10})\b",
             re.IGNORECASE,
         ),
@@ -177,24 +201,50 @@ DETECTORS: tuple[Detector, ...] = (
             r"(?:\s*(?:x|ext\.?)\s*\d{1,5})?(?![\w\-])"
         ),
         priority=70,
+        negative_context=True,
+    ),
+    # Ten digits with no separators are only a phone number if something says so.
+    Detector(
+        "PHONE",
+        re.compile(
+            r"(?i:\b(?:phone|tel|telephone|cell|mobile|contact|call|home|work|fax)\b)[^\n\d]{0,15}"
+            r"(?P<value>(?:\+?1)?\d{10})(?!\d)"
+        ),
+        priority=70,
+        confidence=0.85,
     ),
     Detector(
         "IP_ADDRESS",
         re.compile(r"(?<![\d.])(?P<value>(?:\d{1,3}\.){3}\d{1,3})(?!\.?\d)"),
         priority=65,
         validator=_valid_ipv4,
+        negative_context=True,
     ),
     Detector(
         "POSTAL_CODE",
-        re.compile(r"\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ \-]?\d[ABCEGHJ-NPRSTV-Z]\d\b"),
+        re.compile(r"\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ \-]?\d[ABCEGHJ-NPRSTV-Z]\d\b", re.IGNORECASE),
         priority=60,
     ),
-    # A labelled name ("Patient: Jane Doe") is a strong cue.
+    # A labelled name ("Patient: Jane Doe", "Emergency contact: ...") is a strong cue.
     Detector(
         "PATIENT_NAME",
-        re.compile(rf"\b(?:Patient(?:\s+Name)?|Pt|Name|Client|Resident)\s*[:\-]\s*(?P<value>{_NAME})"),
+        re.compile(
+            r"(?i:\b(?:Patient(?:\s+Name)?|Pt|Name|Client|Resident|Re|Emergency\s+Contact|Next\s+of\s+Kin|"
+            r"Contact\s+Person|Substitute\s+Decision[\s\-]Maker|SDM|Guardian))\s*[:\-]\s*"
+            rf"{_NOT_TITLE}(?P<value>{_NAME_OR_REVERSED})"
+        ),
         priority=50,
         confidence=0.85,
+    ),
+    # Referral-letter and relative cues: "Thank you for seeing Jane Doe", "her daughter, Ann Doe".
+    Detector(
+        "PATIENT_NAME",
+        re.compile(
+            rf"(?:(?i:\bThank\s+you\s+for\s+(?:seeing|assessing|reviewing))|"
+            rf"(?i:\b(?:his|her|their|the\s+patient's)\s+{_RELATION})\s*,?)\s+{_NOT_TITLE}(?P<value>{_NAME})"
+        ),
+        priority=50,
+        confidence=0.8,
     ),
     # An honorific ("Mrs. Doe") is weaker: it also matches staff and family members.
     Detector(
@@ -228,12 +278,17 @@ def resolve_overlaps(findings: Iterable[Finding], priorities: dict[str, int] | N
     Greedy: sort by priority (highest first), then length (longest first),
     then position; accept a finding only if it does not overlap one already
     accepted.  Returns findings sorted by start offset.  Findings whose
-    ``source`` is ``"manual"`` use the ``MANUAL`` priority whatever their kind.
+    ``source`` is ``"manual"`` use the ``MANUAL`` priority whatever their kind;
+    propagated name repeats rank lowest.
     """
     prio = priorities if priorities is not None else KIND_PRIORITY
 
     def rank(f: Finding) -> int:
-        return prio.get("MANUAL", 200) if f.source == "manual" else prio.get(f.kind, 0)
+        if f.source == "manual":
+            return prio.get("MANUAL", 200)
+        if f.source == "propagation":
+            return 1  # a repeat of an existing name never displaces another finding
+        return prio.get(f.kind, 0)
 
     ordered = sorted(findings, key=lambda f: (-rank(f), -(f.end - f.start), f.start))
     kept: list[Finding] = []
@@ -241,6 +296,41 @@ def resolve_overlaps(findings: Iterable[Finding], priorities: dict[str, int] | N
         if not any(f.overlaps(k) for k in kept):
             kept.append(f)
     return sorted(kept, key=lambda f: (f.start, f.end))
+
+
+#: Capitalized words that are never propagated as names on their own.
+_PROPAGATION_STOPWORDS = frozenset(
+    "Patient Name Client Resident Contact Emergency Doctor Nurse The This That And For With From Date Health Card "
+    "Clinic Hospital Centre Center Street Road Avenue Drive January February March April May June July August "
+    "September October November December Monday Tuesday Wednesday Thursday Friday Saturday Sunday".split()
+)
+PROPAGATION_CONFIDENCE = 0.75
+
+
+def _propagate_names(text: str, findings: list[Finding]) -> list[Finding]:
+    """Find later mentions of names already found with a cue.
+
+    If "Patient: Eleanor Whitfield" was found, then "Eleanor" and "Whitfield"
+    elsewhere in the same text are very likely the same person.  This is a
+    standard de-identification technique (sometimes called name propagation).
+    Matching is case-sensitive and whole-word.
+    """
+    tokens: set[str] = set()
+    for f in findings:
+        if f.kind == "PATIENT_NAME":
+            for tok in re.split(r"[\s,]+", f.text):
+                tok = tok.strip(".")
+                if len(tok) >= 3 and tok[0].isupper() and tok not in _PROPAGATION_STOPWORDS:
+                    tokens.add(tok)
+    if not tokens:
+        return []
+    pattern = re.compile(
+        r"(?<![\w'\-])(?:" + "|".join(map(re.escape, sorted(tokens, key=len, reverse=True))) + r")(?![\w'\-])"
+    )
+    return [
+        Finding("PATIENT_NAME", m.start(), m.end(), m.group(0), PROPAGATION_CONFIDENCE, "propagation")
+        for m in pattern.finditer(text)
+    ]
 
 
 def scan(
@@ -276,4 +366,12 @@ def scan(
         # resolution, so a lower-priority finding underneath can still win.
         found = [f for f in found if not dictionary.allows(f.text)]
         found.extend(dictionary.find(text))
-    return resolve_overlaps(found)
+    resolved = resolve_overlaps(found)
+    if "PATIENT_NAME" in wanted:
+        extra = _propagate_names(text, resolved)
+        if dictionary is not None:
+            extra = [f for f in extra if not dictionary.allows(f.text)]
+        if extra:
+            # Existing findings win overlaps because propagation has the lowest rank.
+            resolved = resolve_overlaps([*resolved, *extra])
+    return resolved

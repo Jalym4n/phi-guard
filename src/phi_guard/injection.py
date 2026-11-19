@@ -7,7 +7,9 @@ Pipeline:
 2. Normalize with Unicode NFKC (turns full-width ``ｉｇｎｏｒｅ`` into
    ``ignore``) and strip invisible characters.
 3. Decode Base64-looking runs and scan the decoded text too.
-4. Run weighted regex rules.  The final score combines rule weights as
+4. Map look-alike Cyrillic/Greek letters and leetspeak digits to plain
+   Latin letters (one-to-one, so highlight offsets stay correct).
+5. Run weighted regex rules.  The final score combines rule weights as
    independent evidence: ``score = 1 - prod(1 - w)``.
 
 Heuristics catch common, known attack phrasing.  They cannot catch every
@@ -38,7 +40,23 @@ REVIEW_THRESHOLD = 0.3
 BLOCK_THRESHOLD = 0.7
 
 # Zero-width characters, bidi controls, word joiner, BOM, and Unicode tag characters.
-_INVISIBLE_RE = re.compile("[­᠎​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f]")
+# Written as escapes on purpose: literal invisible characters in source code are unreadable.
+_INVISIBLE_RE = re.compile(
+    r"[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\U000e0000-\U000e007f]"
+)
+# Cyrillic and Greek letters that look like Latin ones (a small subset of Unicode TR39
+# "confusables").  NFKC does not map these, so "іgnоrе" (Cyrillic і, о, е) would slip past.
+_CONFUSABLES = str.maketrans(
+    "аеорсухіјѕԁӏАВЕКМНОРСТХІЈЅοαντρκιΑΒΕΖΗΙΚΜΝΟΡΤΧΥ",
+    "aeopcyxijsdlABEKMHOPCTXIJSoavtpkiABEZHIKMNOPTXY",
+)
+_LOOKALIKE_RE = re.compile(r"[\u0370-\u03ff\u0400-\u04ff]")
+_MIXED_SCRIPT_RE = re.compile(r"\b(?=\w*[A-Za-z])(?=\w*[\u0370-\u03ff\u0400-\u04ff])\w+\b")
+# Leetspeak: digits standing in for letters inside words ("1gn0re").  One-to-one, so offsets are kept.
+# Symbols such as @ and $ are left alone: they appear in email addresses and prices.
+_LEET = str.maketrans("013457", "oieast")
+_LEET_WORD_RE = re.compile(r"[A-Za-z0-9]*(?:[A-Za-z][0-9]|[0-9][A-Za-z])[A-Za-z0-9]*")
+
 _BASE64_RE = re.compile(r"(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{16,}={0,2}(?![A-Za-z0-9+/=])")
 
 
@@ -67,8 +85,11 @@ RULES: tuple[Rule, ...] = (
         "role_hijack",
         0.4,
         _r(
-            r"\b(?:you\s+are\s+now|from\s+now\s+on,?\s+you\s+(?:are|will)|act\s+as\s+(?:a|an|if)|"
-            r"pretend\s+(?:to\s+be|you\s+are)|roleplay\s+as|new\s+persona)\b"
+            r"\b(?:you\s+are\s+now\s+(?!able|ready|eligible|registered|booked|signed|logged|enrolled|free|welcome)|"
+            r"from\s+now\s+on,?\s+you\s+(?:are|will)|"
+            r"act\s+as\s+(?:if\b|(?:a|an|the)\s+(?:[\w']+\s+){0,2}?"
+            r"(?:admin\w*|system|developer|assistant|AI|model|bot|unrestricted|different|new|root)\b)|"
+            r"pretend\s+(?:to\s+be|you\s+are)|roleplay\s+as|new\s+persona)"
         ),
     ),
     Rule(
@@ -79,20 +100,22 @@ RULES: tuple[Rule, ...] = (
             r"\b(?:system\s+prompt|hidden\s+(?:instructions?|prompt)|initial\s+instructions?|your\s+(?:instructions|rules|prompt))\b"
         ),
     ),
+    # Chat-template tokens are a strong signal; a plain "System:" line prefix is a weak one.
     Rule(
         "fake_delimiter",
         0.5,
         _r(
-            r"(?:<\|?\s*(?:im_start|im_end|system|endoftext)\s*\|?>|\[/?(?:INST|SYS)\]|"
-            r"^\s*#{2,}\s*(?:system|instruction)s?\b|^\s*(?:system|assistant)\s*:\s)"
+            r"(?:<\|?\s*(?:im_start|im_end|system|endoftext)\s*\|?>|\[/?(?:INST|SYS)\]|^\s*#{2,}\s*(?:system|instruction)s?\b)"
         ),
     ),
+    Rule("fake_delimiter", 0.25, re.compile(r"^\s*(?:system|assistant)\s*:\s", re.IGNORECASE | re.MULTILINE)),
     Rule(
         "data_exfiltration",
         0.6,
         _r(
-            r"\b(?:send|email|post|upload|forward|transmit|exfiltrate|leak)\b[^.!?]{0,60}?"
-            r"\b(?:to\s+(?:https?://|[\w.\-]+@|this\s+(?:url|address|email))|https?://|webhook)"
+            r"\b(?:send|email|post|upload|forward|transmit|exfiltrate|leak|share)\b[^.!?]{0,40}?"
+            r"\b(?:patient|record|data|list|histor|conversation|chart|summar|contact|password|credential|everything|all)\w*"
+            r"[^.!?]{0,40}?(?:\bto\s+(?:https?://|[\w.\-]+@|this\s+(?:url|address|email))|https?://|\bwebhook)"
         ),
     ),
     Rule(
@@ -113,12 +136,27 @@ RULES: tuple[Rule, ...] = (
         0.6,
         _r(
             r"\b(?:jailbreak|DAN\s+mode|developer\s+mode|no\s+restrictions|without\s+(?:any\s+)?(?:restrictions|filters|limits)|"
-            r"(?:disable|bypass|turn\s+off|remove)\b[^.\n]{0,20}?\b(?:safety|filters?|guardrails?|content\s+polic(?:y|ies)))"
+            r"(?:disable|bypass|turn\s+off|remove|ignore)\b[^.\n]{0,20}?\b(?:safety\s+(?:filters?|rules|guardrails?|settings|"
+            r"restrictions|polic(?:y|ies)|guidelines)|filters?|guardrails?|content\s+polic(?:y|ies)))"
+        ),
+    ),
+    # Replacing the model's task without the usual "ignore previous instructions" wording.
+    Rule(
+        "task_replacement",
+        0.5,
+        _r(
+            r"\b(?:your|the)\s+(?:new|real|actual|true|only)\s+(?:task|job|instructions?|goal|purpose|objective)\b|"
+            r"\bno\s+longer\s+appl(?:y|ies)\b|"
+            r"\b(?:earlier|previous|prior|original)\s+(?:setup|guidance|instructions?|rules?|prompt)\s+(?:was|were|is|are)\s+"
+            r"(?:a\s+test|void|cancel+ed|obsolete|fake)\b|"
+            r"\beverything\s+you\s+(?:were|have\s+been)\s+told\b|"
+            r"\btreat\b[^.\n]{0,40}\bas\s+(?:coming\s+from|written\s+by)\s+(?:your\s+)?(?:developers?|system|admin\w*|creators?)"
         ),
     ),
 )
 
 HIDDEN_CHARACTERS_WEIGHT = 0.4
+LOOKALIKE_WEIGHT = 0.4
 
 
 @dataclass(frozen=True)
@@ -188,6 +226,13 @@ def normalize_with_map(text: str) -> tuple[str, list[int]]:
     return "".join(out), origin
 
 
+def _matching_view(norm: str) -> str:
+    """The text the rules actually run on: look-alike letters mapped to Latin and
+    leetspeak words decoded.  Both maps are one-to-one, so offsets are unchanged."""
+    mapped = norm.translate(_CONFUSABLES)
+    return _LEET_WORD_RE.sub(lambda m: m.group(0).lower().translate(_LEET), mapped)
+
+
 def _decode_base64_runs(text: str) -> list[tuple[int, int, str]]:
     out: list[tuple[int, int, str]] = []
     for m in _BASE64_RE.finditer(text):
@@ -216,6 +261,7 @@ def analyze(text: str) -> InjectionReport:
     """Score ``text`` for prompt-injection risk (0 = benign, 1 = certain)."""
     hidden = len(_INVISIBLE_RE.findall(text))
     norm, origin = normalize_with_map(text)
+    view = _matching_view(norm)
     findings: list[InjectionFinding] = []
 
     def span(start: int, end: int) -> tuple[int, int]:
@@ -223,21 +269,30 @@ def analyze(text: str) -> InjectionReport:
         return origin[start], (origin[end - 1] + 1 if end > start else origin[start])
 
     for rule in RULES:
-        for m in rule.pattern.finditer(norm):
-            findings.append(InjectionFinding(rule.name, rule.weight, m.group(0), *span(m.start(), m.end())))
+        for m in rule.pattern.finditer(view):
+            s, e = span(m.start(), m.end())
+            findings.append(InjectionFinding(rule.name, rule.weight, text[s:e], s, e))
 
     for start, end, decoded in _decode_base64_runs(norm):
         for rule in RULES:
-            hit = rule.pattern.search(decoded)
+            hit = rule.pattern.search(_matching_view(decoded))
             if hit:
                 findings.append(
                     InjectionFinding(rule.name, rule.weight, hit.group(0), *span(start, end), source="base64")
                 )
 
-    if hidden:
-        findings.append(InjectionFinding("hidden_characters", HIDDEN_CHARACTERS_WEIGHT, f"{hidden} invisible", 0, 0))
+    for m in _MIXED_SCRIPT_RE.finditer(norm):
+        s, e = span(m.start(), m.end())
+        findings.append(InjectionFinding("lookalike_characters", LOOKALIKE_WEIGHT, text[s:e], s, e))
 
-    # Each rule counts once, however many times it fires.
+    for m in re.finditer(_INVISIBLE_RE.pattern + "+", text):
+        findings.append(
+            InjectionFinding(
+                "hidden_characters", HIDDEN_CHARACTERS_WEIGHT, f"{len(m.group(0))} invisible", m.start(), m.end()
+            )
+        )
+
+    # Each rule counts once (per source), however many times it fires.
     weights: dict[str, float] = {}
     for f in findings:
         key = f"{f.rule}:{f.source}"
@@ -246,6 +301,7 @@ def analyze(text: str) -> InjectionReport:
     for w in weights.values():
         remaining *= 1.0 - w
     score = 1.0 - remaining
+    findings.sort(key=lambda f: (f.start, f.end))
     return InjectionReport(score, _verdict(score), findings, hidden, norm)
 
 
