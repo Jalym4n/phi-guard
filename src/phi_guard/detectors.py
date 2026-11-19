@@ -6,7 +6,14 @@ then resolves overlaps so that each character belongs to at most one
 finding.  When two findings overlap, the one with the higher priority wins;
 ties go to the longer match.
 
-All offsets are Python string indices (Unicode code points).
+Optional extra sources plug into the same overlap resolver:
+
+* street addresses (``addresses.py``, kind ``ADDRESS``),
+* custom "always remove" terms (``dictionary.py``, kind ``CUSTOM``),
+* spaCy person names (``ner.py``, kind ``PERSON_NAME_NER``).
+
+All offsets are Python string indices (Unicode code points); see
+``finding.py`` for UTF-16 conversion.
 """
 
 from __future__ import annotations
@@ -14,32 +21,25 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from .addresses import find_addresses
+from .finding import Finding
+
+if TYPE_CHECKING:
+    from .dictionary import Dictionary
 
 __all__ = [
     "ALL_KINDS",
     "DETECTORS",
+    "EXTRA_KINDS",
+    "KIND_PRIORITY",
     "Detector",
     "Finding",
     "luhn_valid",
     "resolve_overlaps",
     "scan",
 ]
-
-
-@dataclass(frozen=True)
-class Finding:
-    """One piece of personal information found in a text."""
-
-    kind: str
-    start: int
-    end: int
-    text: str
-
-    def overlaps(self, other: Finding) -> bool:
-        return self.start < other.end and other.start < self.end
-
-    def to_dict(self) -> dict[str, object]:
-        return {"kind": self.kind, "start": self.start, "end": self.end, "text": self.text}
 
 
 def luhn_valid(digits: str) -> bool:
@@ -100,6 +100,7 @@ class Detector:
     pattern: re.Pattern[str]
     priority: int
     validator: Callable[[str], bool] | None = None
+    confidence: float = 0.9
 
     def find(self, text: str) -> Iterable[Finding]:
         for m in self.pattern.finditer(text):
@@ -110,7 +111,7 @@ class Detector:
             value = text[start:end]
             if self.validator is not None and not self.validator(value):
                 continue
-            yield Finding(self.kind, start, end, value)
+            yield Finding(self.kind, start, end, value, self.confidence)
 
 
 _SEP = r"[ \-]?"
@@ -129,23 +130,27 @@ DETECTORS: tuple[Detector, ...] = (
         re.compile(rf"(?<![\d\-])(?P<value>\d{{4}}{_SEP}\d{{3}}{_SEP}\d{{3}}(?:[ \-]?[A-Z]{{2}}\b)?)(?![\d\-])"),
         priority=100,
         validator=_valid_ohip,
+        confidence=0.99,
     ),
     Detector(
         "SIN",
         re.compile(r"(?<![\d\-])(?P<value>\d{3}[ \-]?\d{3}[ \-]?\d{3})(?![\d\-])"),
         priority=95,
         validator=_valid_sin,
+        confidence=0.99,
     ),
     Detector(
         "CREDIT_CARD",
         re.compile(r"(?<![\d\-])(?P<value>\d{4}(?:[ \-]?\d{4}){2}[ \-]?\d{1,7})(?![\d\-])"),
         priority=90,
         validator=_valid_card,
+        confidence=0.99,
     ),
     Detector(
         "EMAIL",
         re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"),
         priority=85,
+        confidence=0.98,
     ),
     Detector(
         "MRN",
@@ -184,18 +189,37 @@ DETECTORS: tuple[Detector, ...] = (
         re.compile(r"\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ \-]?\d[ABCEGHJ-NPRSTV-Z]\d\b"),
         priority=60,
     ),
+    # A labelled name ("Patient: Jane Doe") is a strong cue.
     Detector(
         "PATIENT_NAME",
-        re.compile(
-            r"(?:\b(?:Patient(?:\s+Name)?|Pt|Name|Client|Resident)\s*[:\-]\s*"
-            r"|\b(?:Mr|Mrs|Ms|Miss|Mx)\.?\s+)"
-            rf"(?P<value>{_NAME})"
-        ),
+        re.compile(rf"\b(?:Patient(?:\s+Name)?|Pt|Name|Client|Resident)\s*[:\-]\s*(?P<value>{_NAME})"),
         priority=50,
+        confidence=0.85,
+    ),
+    # An honorific ("Mrs. Doe") is weaker: it also matches staff and family members.
+    Detector(
+        "PATIENT_NAME",
+        re.compile(rf"\b(?:Mr|Mrs|Ms|Miss|Mx)\.?\s+(?P<value>{_NAME})"),
+        priority=50,
+        confidence=0.8,
     ),
 )
 
-ALL_KINDS: tuple[str, ...] = tuple(d.kind for d in DETECTORS)
+#: Kinds that can be switched on and off individually.
+ALL_KINDS: tuple[str, ...] = (*dict.fromkeys(d.kind for d in DETECTORS), "ADDRESS")
+
+#: Kinds produced by other sources (custom word lists, NER, manual selection in Studio).
+EXTRA_KINDS: tuple[str, ...] = ("CUSTOM", "PERSON_NAME_NER", "ID_NUMBER", "OTHER")
+
+#: Higher wins when findings overlap.  Manual selections and custom terms beat
+#: every detector because the user asked for them explicitly.
+KIND_PRIORITY: dict[str, int] = {
+    "MANUAL": 200,
+    "CUSTOM": 110,
+    **{d.kind: d.priority for d in DETECTORS},
+    "ADDRESS": 55,
+    "PERSON_NAME_NER": 40,
+}
 
 
 def resolve_overlaps(findings: Iterable[Finding], priorities: dict[str, int] | None = None) -> list[Finding]:
@@ -203,10 +227,15 @@ def resolve_overlaps(findings: Iterable[Finding], priorities: dict[str, int] | N
 
     Greedy: sort by priority (highest first), then length (longest first),
     then position; accept a finding only if it does not overlap one already
-    accepted.  Returns findings sorted by start offset.
+    accepted.  Returns findings sorted by start offset.  Findings whose
+    ``source`` is ``"manual"`` use the ``MANUAL`` priority whatever their kind.
     """
-    prio = priorities if priorities is not None else {d.kind: d.priority for d in DETECTORS}
-    ordered = sorted(findings, key=lambda f: (-prio.get(f.kind, 0), -(f.end - f.start), f.start))
+    prio = priorities if priorities is not None else KIND_PRIORITY
+
+    def rank(f: Finding) -> int:
+        return prio.get("MANUAL", 200) if f.source == "manual" else prio.get(f.kind, 0)
+
+    ordered = sorted(findings, key=lambda f: (-rank(f), -(f.end - f.start), f.start))
     kept: list[Finding] = []
     for f in ordered:
         if not any(f.overlaps(k) for k in kept):
@@ -214,10 +243,19 @@ def resolve_overlaps(findings: Iterable[Finding], priorities: dict[str, int] | N
     return sorted(kept, key=lambda f: (f.start, f.end))
 
 
-def scan(text: str, kinds: Iterable[str] | None = None) -> list[Finding]:
+def scan(
+    text: str,
+    kinds: Iterable[str] | None = None,
+    *,
+    dictionary: Dictionary | None = None,
+    ner: bool = False,
+) -> list[Finding]:
     """Find PHI/PII in ``text``.
 
-    ``kinds`` limits the search to the given detector kinds (default: all).
+    ``kinds`` limits the search to the given detector kinds (default: all of
+    ``ALL_KINDS``).  ``dictionary`` adds always-remove terms and suppresses
+    never-remove terms.  ``ner=True`` adds spaCy person names (needs the
+    ``[ner]`` extra; raises ``ner.NerUnavailable`` otherwise).
     """
     wanted = set(kinds) if kinds is not None else set(ALL_KINDS)
     unknown = wanted - set(ALL_KINDS)
@@ -227,4 +265,15 @@ def scan(text: str, kinds: Iterable[str] | None = None) -> list[Finding]:
     for det in DETECTORS:
         if det.kind in wanted:
             found.extend(det.find(text))
+    if "ADDRESS" in wanted:
+        found.extend(find_addresses(text))
+    if ner:
+        from .ner import find_person_names
+
+        found.extend(find_person_names(text))
+    if dictionary is not None:
+        # Never-remove terms suppress detector findings *before* overlap
+        # resolution, so a lower-priority finding underneath can still win.
+        found = [f for f in found if not dictionary.allows(f.text)]
+        found.extend(dictionary.find(text))
     return resolve_overlaps(found)

@@ -228,10 +228,10 @@ def analyze(text: str) -> InjectionReport:
 
     for start, end, decoded in _decode_base64_runs(norm):
         for rule in RULES:
-            m = rule.pattern.search(decoded)
-            if m:
+            hit = rule.pattern.search(decoded)
+            if hit:
                 findings.append(
-                    InjectionFinding(rule.name, rule.weight, m.group(0), *span(start, end), source="base64")
+                    InjectionFinding(rule.name, rule.weight, hit.group(0), *span(start, end), source="base64")
                 )
 
     if hidden:
