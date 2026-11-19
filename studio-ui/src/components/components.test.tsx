@@ -48,7 +48,7 @@ describe("FindingList", () => {
     expect(within(phone).getByRole("button", { name: "Remove" })).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(within(phone).getByRole("button", { name: "Keep" }));
     expect(onToggle).toHaveBeenCalledWith("1", false);
-    await userEvent.click(screen.getByRole("button", { name: /Show Phone number/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Show in text: Phone number/ }));
     expect(onFocus).toHaveBeenCalledWith("1");
     expect(screen.getByText("Please check")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Undo/ }));

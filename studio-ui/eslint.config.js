@@ -19,4 +19,9 @@ export default tseslint.config(
       "jsx-a11y/label-has-associated-control": ["error", { assert: "either", depth: 3 }],
     },
   },
+  {
+    // Tests assert that elements exist; non-null assertions are clearer than guards there.
+    files: ["**/*.test.{ts,tsx}", "e2e/**/*.ts"],
+    rules: { "@typescript-eslint/no-non-null-assertion": "off" },
+  },
 );

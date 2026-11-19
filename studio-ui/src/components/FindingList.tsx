@@ -39,8 +39,8 @@ export function FindingList({
               type="button"
               onClick={() => onFocus(it.id)}
               className="flex min-w-0 items-center gap-2 rounded text-left hover:underline"
-              aria-label={`Show ${it.label} “${it.text}” in the text`}
             >
+              <span className="sr-only">Show in text: </span>
               <span className={`shrink-0 rounded px-1.5 py-0.5 text-sm font-semibold ${style.className}`}>{it.label}</span>
               <span className="truncate font-mono">{it.text}</span>
             </button>

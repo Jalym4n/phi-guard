@@ -6,11 +6,13 @@ export function FileDrop({
   accept = ".txt,.docx,.pdf",
   label = "Or add a file",
   busy = false,
+  testId = "file-input",
 }: {
   onFile: (file: File) => void;
   accept?: string;
   label?: string;
   busy?: boolean;
+  testId?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -53,7 +55,7 @@ export function FileDrop({
         className="sr-only"
         tabIndex={-1}
         aria-label="Choose a file"
-        data-testid="file-input"
+        data-testid={testId}
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) onFile(f);

@@ -42,7 +42,7 @@ export const HighlightedText = forwardRef<HTMLDivElement, { text: string; highli
             {h.kept ? " · kept" : ""}
             {h.needsCheck ? " · check" : ""}
           </span>
-          <span className="sr-only">{`${tag}${h.kept ? ", kept" : ""}: `}</span>
+          <span data-skip className="sr-only">{`${tag}${h.kept ? ", kept" : ""}: `}</span>
           <span>{text.slice(h.start, h.end)}</span>
         </mark>,
       );

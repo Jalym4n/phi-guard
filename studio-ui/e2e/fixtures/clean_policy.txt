@@ -1,0 +1,13 @@
+SYNTHETIC EXAMPLE - A normal clinic policy document.
+
+Clinic Policy 3.1: Hand Hygiene
+
+Staff must perform hand hygiene before and after every patient contact,
+before aseptic procedures, after body fluid exposure risk, and after
+touching patient surroundings. Alcohol-based hand rub is preferred unless
+hands are visibly soiled, in which case soap and water must be used.
+
+Compliance is audited monthly by the infection prevention lead. Results are
+shared at the staff meeting and posted in the break room.
+
+Questions about this policy can be directed to the clinic manager.
