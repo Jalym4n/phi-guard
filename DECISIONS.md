@@ -53,3 +53,31 @@ sheet is opened in a spreadsheet.
 
 **D13. Injection findings report offsets in the original text.** Normalization (NFKC, zero-width removal)
 changes string length, so `normalize_with_map` keeps a per-character origin map for highlighting.
+
+## Evaluation
+
+**D14. Gold labels follow a "patient and relatives" scope** (as in HIPAA Safe Harbor). Clinician names are
+marked `ignore`: a system that removes them is neither rewarded nor penalized. The clinic's own phone, fax,
+address and postal code are deliberately *unlabelled* hard negatives.
+
+**D15. Dev and test splits use different seeds; the test split also has held-out templates.** Because the
+same person wrote the generator and the rules, a test split from the same templates would only measure
+how well the rules fit their author's own phrasing. 20% of test documents use a nursing-handover template,
+and about 30% of test injection snippets use phrasings, that never appear in dev. Results are reported for
+seen and held-out templates separately.
+
+**D16. Rules were frozen in a commit before the first test run** ("Freeze detection and injection rules
+before first test-split run"). All rule changes in v0.2 were driven by dev-split errors only.
+
+**D17. Presidio runs out of the box with spaCy `en_core_web_lg`**, its recommended model, so the baseline is
+not handicapped by a small model. Overlapping Presidio results are resolved by score then length (the same
+rule its anonymizer uses) so duplicates are not double-counted. Presidio could be extended with Canadian
+recognizers; the comparison is explicitly against the default configuration.
+
+**D18. Leakage counts characters, not types.** A document leaks if any character of any labelled identifier
+is left uncovered by any prediction, whatever label the system used. This is what matters for privacy;
+type mistakes are measured separately by per-type F1.
+
+**D19. Chart colours come from a validated categorical palette** (adjacent-pair colour-vision-deficiency
+separation checked), with at most three series per chart, a legend for multi-series charts, and text in ink
+colours rather than series colours.

@@ -79,6 +79,10 @@ PRESIDIO_MAP = {
     "IP_ADDRESS": "IP_ADDRESS",
 }
 
+DISPLAY = {"NAME": "Name", "DATE_OF_BIRTH": "Date of birth", "OHIP_NUMBER": "OHIP number", "SIN": "SIN",
+           "CREDIT_CARD": "Credit card", "EMAIL": "Email", "PHONE": "Phone", "POSTAL_CODE": "Postal code",
+           "ADDRESS": "Street address", "MRN": "MRN", "IP_ADDRESS": "IP address"}  # fmt: skip
+
 Pred = tuple[int, int, str | None]  # start, end, benchmark label (None = unmapped)
 
 # Reference palette, light mode (see the dataviz notes in DECISIONS.md).
@@ -302,12 +306,16 @@ def make_charts(results: list[SystemResult], inj: dict[str, Any]) -> list[str]:
     labels = list(reversed(LABELS))
     for i, r in enumerate(picks):
         ys = [j + (n - 1 - i) * h - 0.4 + h / 2 for j in range(len(labels))]
-        ax.barh(ys, [r.overlap[k].f1() for k in labels], height=h - 0.03, color=SERIES[i], label=r.name)
-    ax.set_yticks(range(len(labels)), [k.replace("_", " ").title() for k in labels], color=INK)
+        vals = [r.overlap[k].f1() for k in labels]
+        ax.barh(ys, vals, height=h - 0.03, color=SERIES[i], label=r.name)
+        for y, v in zip(ys, vals, strict=True):
+            if v == 0:  # a zero-length bar is invisible; say so explicitly
+                ax.text(0.005, y, "0", va="center", fontsize=7, color=INK_2)
+    ax.set_yticks(range(len(labels)), [DISPLAY[k] for k in labels], color=INK)
     ax.set_xlim(0, 1)
     ax.set_xlabel("F1 score (overlap match), test split")
-    ax.set_title("Detection quality by type", loc="left", fontsize=12, color=INK, pad=12)
-    ax.legend(loc="lower right", frameon=False, fontsize=9)
+    ax.set_title("Detection quality by type", loc="left", fontsize=12, color=INK, pad=28)
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.0), ncol=3, frameon=False, fontsize=9)
     fig.tight_layout()
     fig.savefig(CHARTS / "f1_by_type.png")
     plt.close(fig)

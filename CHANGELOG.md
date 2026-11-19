@@ -12,6 +12,8 @@ All notable changes to this project are documented here. Format based on
 - `documents.py`: text extraction from .txt / .docx / .pdf with content-type checks; redacted .docx output.
 - `output_scan.py`: check AI responses for leaked identifiers and unknown tokens.
 - `phi-guard batch`, `phi-guard output-scan`, `phi-guard eval` commands.
+- Benchmark (`eval/`): 700 synthetic documents, 640 injection snippets, held-out templates, Presidio baseline, `eval/RESULTS.md`.
+- Detection improvements from dev-split analysis: name cues and propagation, negative context for order/lot numbers, lowercase postal codes, more street types, confusable and leetspeak normalization, `task_replacement` injection rule.
 
 ## [0.1.0]
 
