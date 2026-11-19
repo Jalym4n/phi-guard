@@ -81,3 +81,41 @@ type mistakes are measured separately by per-type F1.
 **D19. Chart colours come from a validated categorical palette** (adjacent-pair colour-vision-deficiency
 separation checked), with at most three series per chart, a legend for multi-series charts, and text in ink
 colours rather than series colours.
+
+**D20. One detector change after the freeze, with zero effect on reported numbers.** A Studio API test found
+that the labelled-name cue (`Patient:` etc.) used `\s*`, which could cross a line break and grab the next
+line's label as a name. It was changed to same-line whitespace. The benchmark was re-run: every precision,
+recall, F1 and leakage figure on the test split was identical, so RESULTS.md was not regenerated.
+
+## Studio backend
+
+**D21. The session token travels in the URL fragment** (`#token=...`). Fragments are never sent to the server
+or written to server logs; the page reads it, keeps it in memory, and removes it from the address bar.
+
+**D22. Uploads are kept in memory.** Starlette spools multipart files larger than 1 MB to a temporary file on
+disk. Studio raises that limit to the configured upload ceiling, and a test fails if any temporary file is
+created while uploading a 5 MB document.
+
+**D23. File names are never written to the activity log.** Names like `Whitfield_E_referral.docx` are patient
+details. The log records the file type and size only. (Batch `summary.csv` does list file names: it is a file
+the user explicitly downloads, alongside the redacted files themselves.)
+
+**D24. Batch upload paths are sanitized** (no `..`, drive letters or absolute paths) to prevent "zip slip" when
+the user extracts the result ZIP.
+
+**D25. Keychain fallback is an obfuscated file, labelled as such.** Without an OS keychain there is no secret to
+protect the key with, so the fallback file is AES-GCM-encrypted under a key derived from machine identity and
+user name (scrypt), with 0600 permissions. It stops casual copying to another machine, not an attacker running
+as the same user. Settings says "Stored in a protected file (less secure than the system keychain)".
+
+**D26. Key export uses scrypt (n=2^15, r=8, p=1) + AES-256-GCM** with a random salt and nonce, and a minimum
+password length of 10. Import refuses absurd scrypt parameters so a crafted file cannot cause a CPU/memory DoS.
+
+**D27. Live preview calls are not logged.** `/api/redact` writes an activity entry only when `final=true`
+(Copy or Download), so toggling Keep/Remove does not flood the log.
+
+**D28. Polling `/api/session` does not count as activity**, so the idle countdown is not reset by the page
+that displays it.
+
+**D29. Unexpected errors return a generic message.** Exception text could contain patient details, so it is
+never echoed to the browser.

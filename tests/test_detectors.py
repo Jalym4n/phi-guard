@@ -72,3 +72,8 @@ def test_overlap_resolution_prefers_priority():
     a = Finding("PHONE", 0, 12, "x" * 12)
     b = Finding("OHIP_NUMBER", 0, 12, "x" * 12)
     assert resolve_overlaps([a, b]) == [b]
+
+
+def test_label_cue_does_not_cross_lines():
+    # Regression: "Patient:" with an empty value must not swallow the next line's label.
+    assert [f.kind for f in scan("Patient:   \nDOB: 1957-04-23")] == ["DATE_OF_BIRTH"]

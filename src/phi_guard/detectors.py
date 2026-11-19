@@ -230,7 +230,7 @@ DETECTORS: tuple[Detector, ...] = (
         "PATIENT_NAME",
         re.compile(
             r"(?i:\b(?:Patient(?:\s+Name)?|Pt|Name|Client|Resident|Re|Emergency\s+Contact|Next\s+of\s+Kin|"
-            r"Contact\s+Person|Substitute\s+Decision[\s\-]Maker|SDM|Guardian))\s*[:\-]\s*"
+            r"Contact\s+Person|Substitute\s+Decision[\s\-]Maker|SDM|Guardian))[ \t]*[:\-][ \t]*"
             rf"{_NOT_TITLE}(?P<value>{_NAME_OR_REVERSED})"
         ),
         priority=50,

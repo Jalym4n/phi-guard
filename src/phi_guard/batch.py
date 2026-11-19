@@ -67,7 +67,9 @@ def process_file(
     kinds: Iterable[str] | None = None,
     dictionary: Dictionary | None = None,
     ner: bool = False,
+    mode: str | None = None,
 ) -> BatchItem:
+    """Redact one file.  ``mode`` overrides the redactor's default mode."""
     suffix = PurePosixPath(name).suffix.lower()
     base = PurePosixPath(name.replace("\\", "/")).name
     if base.startswith(".") or suffix not in SUPPORTED_EXTENSIONS:
@@ -77,10 +79,10 @@ def process_file(
     except DocumentError as exc:
         return BatchItem(name, "error", str(exc))
     kinds_list = list(kinds) if kinds is not None else None
-    result = redactor.redact(doc.text, kinds_list, dictionary=dictionary, ner=ner)
+    result = redactor.redact(doc.text, kinds_list, dictionary=dictionary, ner=ner, mode=mode)
     report = analyze(doc.text)
     if doc.kind == "docx":
-        spans = [(f.start, f.end, redactor.token_for(f.kind, f.text)) for f in result.findings]
+        spans = [(f.start, f.end, redactor.token_for(f.kind, f.text, mode)) for f in result.findings]
         output = docx_with_replacements(data, spans)
     else:
         output = result.text.encode("utf-8")

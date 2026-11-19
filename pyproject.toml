@@ -55,7 +55,7 @@ phi-guard-studio = "phi_guard_studio.launcher:main"
 path = "src/phi_guard/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/phi_guard"]
+packages = ["src/phi_guard", "src/phi_guard_studio"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -75,7 +75,7 @@ ignore = ["RUF001", "RUF002", "RUF003", "SIM905", "SIM108"]
 python_version = "3.10"
 mypy_path = "src"
 strict = true
-files = ["src/phi_guard"]
+files = ["src/phi_guard", "src/phi_guard_studio"]
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
@@ -93,3 +93,7 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedE
 
 [tool.ruff.lint.per-file-ignores]
 "eval/*" = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form"]
