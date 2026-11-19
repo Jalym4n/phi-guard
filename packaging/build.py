@@ -34,7 +34,7 @@ def smoke_test(exe: Path) -> None:
         for _ in range(60):
             try:
                 req = urllib.request.Request("http://127.0.0.1:8797/api/health", headers={"X-PHI-Guard-Token": "smoke"})
-                with urllib.request.urlopen(req, timeout=2) as r:  # noqa: S310 - fixed loopback URL
+                with urllib.request.urlopen(req, timeout=2) as r:  # fixed loopback URL only
                     print("smoke test:", r.read().decode())
                     return
             except OSError:
@@ -60,7 +60,8 @@ def main() -> None:
     exe = folder / ("phi-guard-studio.exe" if os.name == "nt" else "phi-guard-studio")
     smoke_test(exe)
     os_name = {"Darwin": "macos", "Windows": "windows"}.get(platform.system(), "linux")
-    archive = shutil.make_archive(str(ROOT / "dist" / f"phi-guard-studio-{__version__}-{os_name}"), "zip", folder.parent, folder.name)
+    base = ROOT / "dist" / f"phi-guard-studio-{__version__}-{os_name}"
+    archive = shutil.make_archive(str(base), "zip", folder.parent, folder.name)
     print("built", archive)
 
 

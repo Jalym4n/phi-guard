@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-11-19
 
 ### Added
 - Street address detection (`ADDRESS`), custom always/never word lists (`CUSTOM`), optional spaCy NER (`PERSON_NAME_NER`).
@@ -16,7 +16,12 @@ All notable changes to this project are documented here. Format based on
 - phi-guard Studio: local web app (FastAPI + React) with remove, check, restore, batch, activity log, settings, help.
 - Studio security controls: loopback bind, per-launch token, Host/Origin checks, strict CSP, in-memory uploads, idle vault clearing, keychain key storage, encrypted key export.
 - Playwright E2E and axe accessibility tests; Windows/macOS/Linux PyInstaller builds and a Dockerfile.
+- Docs: rewritten README with GIF and screenshots, STRIDE threat model, LEARNING.md study guide, DECISIONS.md.
 - Detection improvements from dev-split analysis: name cues and propagation, negative context for order/lot numbers, lowercase postal codes, more street types, confusable and leetspeak normalization, `task_replacement` injection rule.
+
+### Changed
+- `Finding` gained `confidence` and `source`, and moved to `phi_guard.finding` (still re-exported from `detectors`).
+- Name cues no longer cross line breaks.
 
 ## [0.1.0]
 

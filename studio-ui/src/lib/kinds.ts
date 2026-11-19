@@ -22,7 +22,7 @@ const STYLES: Record<string, KindStyle> = {
   POSTAL_CODE: { label: "Postal code", plural: "postal codes", className: "bg-lime-100 text-lime-950 dark:bg-lime-900 dark:text-lime-50" },
   ADDRESS: { label: "Street address", plural: "street addresses", className: "bg-teal-100 text-teal-950 dark:bg-teal-900 dark:text-teal-50" },
   MRN: { label: "Medical record number", plural: "medical record numbers", className: "bg-fuchsia-100 text-fuchsia-950 dark:bg-fuchsia-900 dark:text-fuchsia-50" },
-  IP_ADDRESS: { label: "Computer address (IP)", plural: "computer addresses", className: "bg-slate-200 text-slate-950 dark:bg-slate-700 dark:text-slate-50" },
+  IP_ADDRESS: { label: "Computer address (IP)", plural: "computer addresses (IP)", className: "bg-slate-200 text-slate-950 dark:bg-slate-700 dark:text-slate-50" },
   CUSTOM: { label: "Your word list", plural: "words from your list", className: "bg-indigo-100 text-indigo-950 dark:bg-indigo-900 dark:text-indigo-50" },
   ID_NUMBER: { label: "ID number", plural: "ID numbers", className: "bg-pink-100 text-pink-950 dark:bg-pink-900 dark:text-pink-50" },
   OTHER: { label: "Other", plural: "other details", className: "bg-stone-200 text-stone-950 dark:bg-stone-700 dark:text-stone-50" },
@@ -50,7 +50,9 @@ export function describeCounts(counts: Record<string, number>): string {
     .filter(([, n]) => n > 0)
     .map(([kind, n]) => {
       const s = kindStyle(kind);
-      return `${n} ${n === 1 ? s.label.toLowerCase() : s.plural}`;
+      // Lower-case only the first letter so acronyms stay intact: "computer address (IP)".
+      const singular = s.label.charAt(0).toLowerCase() + s.label.slice(1);
+      return `${n} ${n === 1 ? singular : s.plural}`;
     });
   return `Found ${total} patient detail${total === 1 ? "" : "s"}: ${parts.join(", ")}.`;
 }
