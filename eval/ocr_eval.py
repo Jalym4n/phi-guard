@@ -186,6 +186,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "cer": sum(r["cer"] for r in rows) / len(rows),
         "sec_per_page": sum(r["seconds"] for r in rows) / pages,
         "per_type": {k: 1 - v[0] / v[1] for k, v in per_type.items() if v[1]},
+        "per_type_n": {k: v[1] for k, v in per_type.items()},
         "confidence": (sum(r["confidence"] for r in rows if r["confidence"]) / len(rows))
         if rows[0]["confidence"]
         else None,
@@ -263,14 +264,17 @@ def write_report(
         "",
         "## Identifiers removed, by type",
         "",
-        "| Type | " + " | ".join(LEVEL_NAMES[lv] for lv in summaries) + " |",
+        "Types with fewer than 20 examples (marked *) are too rare here for their percentages to mean much.",
+        "",
+        "| Type | Examples | " + " | ".join(LEVEL_NAMES[lv] for lv in summaries) + " |",
     ]
-    L += ["|---|" + "---:|" * len(summaries)]
+    L += ["|---|---:|" + "---:|" * len(summaries)]
     for k in LABELS:
         if k in summaries["text"]["per_type"]:
-            L.append(
-                f"| {DISPLAY[k]} | " + " | ".join(pct(summaries[lv]["per_type"].get(k, 0)) for lv in summaries) + " |"
-            )
+            n = summaries["text"]["per_type_n"][k]
+            label = DISPLAY[k] + (" *" if n < 20 else "")
+            cells = " | ".join(pct(summaries[lv]["per_type"].get(k, 0)) for lv in summaries)
+            L.append(f"| {label} | {n} | {cells} |")
     if "visual_removed" in summaries.get("fax", {}):
         s = summaries["fax"]
         L += [
@@ -339,7 +343,10 @@ def main(argv: list[str] | None = None) -> int:
     chart(summaries, HERE / "charts" / "ocr_levels.png")
     args.out.write_text(write_report(summaries, all_rows, info), encoding="utf-8")
     (HERE / f"summary_ocr_{args.split}.json").write_text(
-        json.dumps({k: {kk: vv for kk, vv in v.items() if kk != "per_type"} for k, v in summaries.items()}, indent=2)
+        json.dumps(
+            {k: {kk: vv for kk, vv in v.items() if kk not in ("per_type", "per_type_n")} for k, v in summaries.items()},
+            indent=2,
+        )
         + "\n",
         encoding="utf-8",
     )

@@ -235,7 +235,8 @@ def _eval(args: argparse.Namespace) -> int:
         return 1
     gen = [sys.executable, "-m", "eval.generate"] + (["--quick"] if args.quick else [])
     run = [sys.executable, "-m", "eval.run"] + (["--quick"] if args.quick else [])
-    for cmd in (gen, run):
+    ocr_run = [sys.executable, "-m", "eval.ocr_eval"] + (["--docs", "10"] if args.quick else [])
+    for cmd in (gen, run, ocr_run):
         code = subprocess.call(cmd, cwd=root)
         if code:
             return code

@@ -11,7 +11,7 @@ lint:
 
 # Regenerates the synthetic dataset and every number in eval/RESULTS.md.
 eval:
-	python -m eval.generate && python -m eval.run
+	python -m eval.generate && python -m eval.run && python -m eval.ocr_eval
 
 eval-quick:
 	python -m eval.generate --quick --out /tmp/phi-guard-eval && python -m eval.run --quick
