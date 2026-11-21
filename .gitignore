@@ -17,3 +17,4 @@ studio-ui/playwright-report/
 *.jsonl
 !eval/data/*.jsonl
 !tests/fixtures/*.jsonl
+*.tsbuildinfo
