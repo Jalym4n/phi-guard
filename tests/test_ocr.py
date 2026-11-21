@@ -286,3 +286,21 @@ def test_redaction_box_hides_word_count_and_lengths():
     assert page.getpixel((40, 20)) == 255  # "Patient:" untouched
     assert page.getpixel((30, 70)) == 0  # second line boxed separately
     assert page.getpixel((100, 50)) == 255  # nothing drawn between the lines
+
+
+def test_bundled_tesseract_is_preferred_and_finds_its_data(monkeypatch, tmp_path):
+    """Desktop builds ship Tesseract in a 'tesseract' folder next to the app."""
+    import sys
+
+    app_dir = tmp_path / "phi-guard-studio"
+    bundled = app_dir / "tesseract"
+    (bundled / "tessdata").mkdir(parents=True)
+    exe = bundled / ("tesseract.exe" if os.name == "nt" else "tesseract")
+    exe.write_text("#!/bin/sh\necho tesseract 5.0.0\n")
+    exe.chmod(0o755)
+    monkeypatch.delenv("PHI_GUARD_TESSERACT", raising=False)
+    monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(app_dir / "phi-guard-studio"))
+    assert ocr.find_tesseract() == str(exe)
+    assert ocr._env(str(exe))["TESSDATA_PREFIX"] == str(bundled / "tessdata")

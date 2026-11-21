@@ -133,11 +133,20 @@ def find_tesseract() -> str | None:
     return None
 
 
+def _env(path: str) -> dict[str, str]:
+    """Environment for Tesseract.  A bundled copy keeps its language data in ``tessdata`` beside it."""
+    env = {**os.environ, "OMP_THREAD_LIMIT": "2"}
+    tessdata = Path(path).parent / "tessdata"
+    if "TESSDATA_PREFIX" not in env and tessdata.is_dir():
+        env["TESSDATA_PREFIX"] = str(tessdata)
+    return env
+
+
 @lru_cache(maxsize=4)
 def _info(path: str) -> dict[str, Any]:
     try:
-        version = subprocess.run([path, "--version"], capture_output=True, timeout=15, check=False)
-        langs = subprocess.run([path, "--list-langs"], capture_output=True, timeout=15, check=False)
+        version = subprocess.run([path, "--version"], capture_output=True, timeout=15, check=False, env=_env(path))
+        langs = subprocess.run([path, "--list-langs"], capture_output=True, timeout=15, check=False, env=_env(path))
     except (OSError, subprocess.TimeoutExpired):
         return {"available": False, "version": None, "languages": [], "path": path}
     out = (version.stdout + version.stderr).decode(errors="replace")
@@ -248,7 +257,7 @@ def _prepare(img: Any) -> Any:
 def _run_tesseract(img: Any, lang: str, path: str) -> str:
     buf = io.BytesIO()
     img.save(buf, "PNG")
-    env = {**os.environ, "OMP_THREAD_LIMIT": "2"}
+    env = _env(path)
     try:
         proc = subprocess.run(
             [path, "stdin", "stdout", "-l", lang, "--psm", PSM, "tsv"],

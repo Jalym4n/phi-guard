@@ -39,7 +39,8 @@ flowchart LR
         subgraph TB3["Trust boundary: Studio process"]
             SRV["FastAPI server"] --> LIB["phi_guard library"]
             SRV --> VAULT[("Vault (RAM)")]
-            SRV --> PARSE["File parsing<br/>python-docx, pypdf"]
+            SRV --> PARSE["File parsing<br/>python-docx, pypdf, Pillow, PDFium"]
+        PARSE -->|"stdin / stdout pipes"| TESS["Tesseract OCR<br/>(separate process)"]
         end
         SRV --> KEY[("OS keychain / key.bin")]
         SRV --> LOG[("audit.jsonl<br/>counts only")]
@@ -90,7 +91,7 @@ Patient details cross the computer's boundary **only** when the user copies or d
 | Upload spooled to a temp file (patient data on disk) | I | Starlette's 1 MB spool threshold raised to the upload limit; uploads stay in RAM. ✅ | `test_uploads_never_touch_disk` (fails if any temp file is created) |
 | Batch file names like `../../etc/passwd` (zip slip) | T | Paths sanitized: no `..`, absolute paths or drive letters. ✅ | `test_batch_paths_cannot_escape_zip`, `test_batch_end_to_end` |
 | CSV formula injection via file names in `summary.csv` | T | Cells starting with `= + - @` are prefixed with `'`. ✅ | `test_summary_csv_blocks_formula_injection` |
-| Scanned PDF silently treated as "no patient details" | I | No text layer → explicit "this is a scanned image" error, not an empty result. ✅ | `test_text_pdf_and_scanned_pdf` |
+| Scanned PDF silently treated as "no patient details" | I | Pages without a text layer are read with OCR; if no text can be found (or OCR is unavailable or off), an explicit message is shown, never an empty result. ✅ | `test_text_pdf_and_blank_scan`, `test_scanned_pdf_without_ocr_engine` |
 
 ### 4.4 Key storage
 
@@ -126,7 +127,21 @@ Patient details cross the computer's boundary **only** when the user copies or d
 | AI answer leaks or invents identifiers | I | Output scan ignores known codes and flags real-looking identifiers and unknown codes. ✅ | `test_output_scan_ignores_known_codes` |
 | Over-trust ("it said safe, so it's safe") | — | UI copy states limits plainly ("It can miss new tricks"); Help explains what Studio can't do. | Help page |
 
-### 4.8 Supply chain and build
+### 4.8 Scanned documents (OCR)
+
+| Threat | STRIDE | Mitigation | Test |
+|---|---|---|---|
+| Scanned referral written to disk by the OCR step | I | Tesseract is run as a subprocess fed through stdin/stdout pipes (no `pytesseract`, which writes temp files). Verified with the temp directory pointed at an empty folder, and by running the Docker image. ✅ | `test_ocr_never_writes_temporary_files` |
+| Decompression bomb (tiny file, gigantic image) or a 500-page fax | D | 40-megapixel cap per page, Pillow's bomb warning treated as an error, at most 30 OCR pages, 300 dpi rendering. ✅ | `test_image_too_large_is_refused`, `test_too_many_pages_is_refused` |
+| Malformed image crashes or hangs the app | D | Images are decoded by Pillow/PDFium with errors turned into plain messages; recognition runs in a separate Tesseract process with a 90-second limit per page. ✅ | `test_damaged_files`, `test_tesseract_failures_become_plain_errors` |
+| Command injection through the OCR language setting | E | The language is validated against `[a-z]{3}(+[a-z]{3})*` and only two values are offered; Tesseract is called with an argument list, never a shell. ✅ | `test_invalid_language_rejected` |
+| OCR misreads a name or number, so it is not detected and leaks | I | **Residual risk, measured** (`eval/RESULTS_OCR.md`): documents with any leak rise from 24% (typed) to 41% (standard fax) and 77% (bad fax). Mitigations: confidence shown on upload, a notice asking users to compare names and numbers, side-by-side page previews, editable text before Find. | `eval/RESULTS_OCR.md`, E2E faxed-referral test |
+| Redacted scan still leaks: text hidden under boxes, or boxes revealing word lengths | I | Output is an image-only PDF (no text layer); one box per detail per line. The benchmark measures ink coverage at true character positions: boxes cover 99.3% of details removed from the text. ✅ | `test_redacted_scan_hides_details_and_has_no_text_layer`, `test_redaction_box_hides_word_count_and_lengths` |
+| Redacted scan offsets drift from what the user reviewed | T | The server re-runs deterministic OCR on the same file; the download is disabled if the user edited the OCR text. ✅ | E2E "editing OCR text disables the redacted-scan download" |
+| Prompt injection hidden in a scanned document | T, E | OCR text goes through the same "Check a document" screening as typed text. | `test_inject_*` |
+| Tampered or outdated bundled Tesseract | T | Windows builds bundle Tesseract from the package manager in CI; Dependabot does not cover it, so it must be updated with each release. **Residual risk.** | Release workflow |
+
+### 4.9 Supply chain and build
 
 | Threat | Mitigation |
 |---|---|
@@ -144,7 +159,7 @@ Patient details cross the computer's boundary **only** when the user copies or d
 
 ## 6. Residual risks (summary)
 
-1. Detection misses (measured, see results); mitigated by human review, not eliminated.
+1. Detection misses (measured, see results); mitigated by human review, not eliminated. OCR misreads on faxes add to them (measured in `eval/RESULTS_OCR.md`).
 2. Novel prompt-injection phrasing; heuristics are a triage signal only.
 3. Whole-log rewrite; mitigated by exporting or printing the log.
 4. Keychain fallback is obfuscation, not strong protection.

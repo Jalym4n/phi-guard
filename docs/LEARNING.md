@@ -55,6 +55,30 @@ It catches every single-digit typo and most swapped neighbours, which is why ID 
 
 ---
 
+## 2b. Reading scanned documents and faxes (`ocr.py`)
+
+**Idea:** a scanned PDF or fax is a picture of text, so the detectors have nothing to read until optical
+character recognition (OCR) turns the picture back into text.
+
+* **Engine:** Tesseract, open-source and offline. It was more accurate and faster than the pip-only alternative
+  on dev documents, and reads French.
+* **No temp files:** the popular Python wrapper writes each image to disk. phi-guard pipes the image straight
+  into the Tesseract process and reads the text back, so scanned referrals never touch disk.
+* **Cleanup:** a 3x3 median filter removes fax "speckle" before recognition. That one step raised identifiers
+  found on dev faxes from 89% to 94%.
+* **Word positions:** Tesseract reports where each word sits on the page. After redaction, Studio draws a
+  black box over every word of each detected detail, merging words on the same line so box sizes don't reveal
+  word lengths, and saves the pages as an image-only PDF (no hidden text underneath).
+* **What goes wrong:** OCR errors are rare (about 0.3% of characters on a standard fax) but they land on digits
+  and short labels. One misread digit breaks a health card number's Luhn checksum, so it isn't recognized; a
+  misread "MRN:" loses the cue. That's why documents with any leak rise from 24% (typed) to 41% (fax) and 77%
+  (bad fax), and why Studio shows confidence and the scanned pages for a human check.
+* **Measuring it honestly:** checking a redacted scan by re-running OCR on it undercounts leaks (a misread
+  detail is misread again and looks hidden). The benchmark instead knows exactly where each character was drawn
+  and measures how much of its ink is under a box.
+
+---
+
 ## 3. Codes, HMAC, and why the key matters (`redactor.py`)
 
 **Idea:** a code like `[PATIENT_NAME_a2b6c3d4]` is a *keyed* fingerprint of the value, so the same name always
@@ -216,7 +240,7 @@ The lesson: rules are precise and explainable but brittle, so the product puts a
 
 ---
 
-## 10. Ten likely interview questions, with model answers
+## 10. Likely interview questions, with model answers
 
 **1. "Walk me through phi-guard in two minutes."**
 Clinicians want to use AI for paperwork, but notes contain identifiers. phi-guard is a Python library and a
@@ -281,6 +305,15 @@ variety. Add a proper date parser, make NER the default with an allowlist for dr
 add a small learned classifier as a second stage for prompt injection. On the product side, code-sign the
 desktop builds and run a usability test with three or four clinic staff.
 
+**11. "Lots of referrals arrive by fax. How does phi-guard handle that, and where does it fall short?"**
+Scans go through Tesseract OCR, run offline and fed through pipes so the images never hit disk, with a median
+filter for fax noise. The text then goes through the normal detectors, and Studio can produce the scan itself
+with black boxes over the details as an image-only PDF. I measured it on the test split rendered as clean scans,
+standard faxes and bad faxes: clean scans perform like typed text, but leaks rise to 41% of documents on
+standard faxes and 77% on bad faxes, mostly because one misread digit breaks a checksum. So Studio shows OCR
+confidence and the pages side by side, and the next step is scan-aware detection that tolerates one misread
+character, designed on dev data and measured on a fresh test split.
+
 ---
 
 ## 11. Quick glossary
@@ -291,6 +324,7 @@ desktop builds and run a usability test with three or four clinic staff.
 | Pseudonymization | Replacing identifiers with consistent codes that can be reversed with a secret. |
 | Masking | Replacing identifiers with a type label; not reversible. |
 | NER | Named entity recognition: a statistical model that labels people, places, organizations in text. |
+| OCR | Optical character recognition: turning a picture of text (a scan or fax) back into text. |
 | NFKC | A Unicode normalization that turns compatibility characters (full-width, ligatures) into plain ones. |
 | CSRF | Cross-site request forgery: another site makes your browser send requests you didn't intend. |
 | CSP | Content Security Policy: a header that restricts what a page may load and run. |

@@ -13,6 +13,10 @@ RUN mkdir -p /src/phi_guard_studio && npx tsc -b && npx vite build --outDir /out
 
 FROM python:3.12-slim AS app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+# Tesseract reads scanned PDFs and faxes (English and French).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra \
+ && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 studio
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./

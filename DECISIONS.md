@@ -155,3 +155,45 @@ background process.
 `--allow-network`, runs as a non-root user, and the docs always publish the port to `127.0.0.1` only.
 The data folder is created with the right owner before it is declared a volume (a bug found by running the
 image). A CI job builds the image and smoke-tests the token check and the non-root user.
+
+## Scanned documents (OCR), v0.3
+
+**D39. Tesseract is the OCR engine.** Compared on dev documents rendered as scans and faxes, Tesseract 5 had a
+0% character error rate on clean scans (RapidOCR, the pip-only alternative: 12.8%), found more identifiers on
+standard faxes (94% vs 79%), was about 3x faster, and reads French. It is Apache-2.0 licensed and runs fully
+offline. The cost is that it is a separate program to install or bundle (D43).
+
+**D40. Tesseract runs as a separate process fed through pipes, not via `pytesseract`.** `pytesseract` writes
+every image and its output to temporary files, which would put scanned patient documents on disk. Studio sends
+the PNG on stdin and reads TSV on stdout. A separate process also isolates crashes on malformed images, and each
+page has a 90-second limit. A test runs OCR with the temp directory pointed at an empty folder and fails if
+anything appears; running the Docker image showed no new files after OCR.
+
+**D41. Image cleanup and layout were chosen on dev data only.** A 3x3 median filter (removes fax speckle) raised
+identifiers found on dev faxes from 89% to 94% and on bad faxes from 74% to 82%; upscaling was inconsistent and
+was dropped. Tesseract's automatic page layout (psm 3) scored the same as single-column modes on dev and copes
+better with letterheads and columns, so it was chosen. The pipeline was frozen in a commit before the test run.
+
+**D42. Visual redaction outputs an image-only PDF with one box per detail per line.** Black boxes are drawn over
+whole words (when in doubt, black it out). Words of one detail on the same line are merged into one box, so the
+box doesn't reveal word count or length (found on dev data, committed before the test run). The PDF has no text
+layer, so nothing survives "under" the boxes. The download is disabled if the user edited the OCR text, because
+the server re-runs OCR (deterministic) to reproduce the reviewed offsets and an edited text would not match.
+
+**D43. Windows builds bundle Tesseract; macOS and Linux use a system install.** The release workflow installs
+Tesseract on Windows (with French data) and copies it into the app's `tesseract/` folder, where Studio looks
+first. Bundling Tesseract's shared libraries on macOS reliably needs extra tooling, so macOS users install it
+with Homebrew; Studio shows install guidance when it's missing, and typed documents work without it. The Docker
+image includes Tesseract. The Windows bundling step runs only in the release workflow and could not be tested in
+this session.
+
+**D44. Safety limits for images.** At most 30 OCR pages per document; pages rendered at 300 dpi and capped at 40
+megapixels; Pillow's decompression-bomb warning is treated as an error. Fax images at 204x98 dpi are stretched to
+square pixels before recognition so letters aren't squashed.
+
+**D45. The OCR benchmark measures leaks the way a privacy officer would.** A detail "survives" if it still appears
+in the redacted output exactly or within an edit distance of len/6 (a misread `Whitfie1d` still reveals the
+name), and names are checked word by word. The black-box check uses the renderer's exact character positions
+and counts a detail hidden only if 98% of its ink is under a box. Re-reading the redacted scan with OCR was
+rejected as a metric: a detail the OCR misread (and so didn't box) tends to be misread again, so it looked
+hidden when a person could still read it.

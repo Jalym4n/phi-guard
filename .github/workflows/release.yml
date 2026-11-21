@@ -21,7 +21,27 @@ jobs:
         with:
           node-version: 22
       - run: pip install ".[studio]" pyinstaller
+      # Text recognition for scanned documents. Windows builds bundle Tesseract (Apache-2.0) with
+      # English and French data so clinics don't install anything else. macOS and Linux builds use a
+      # system Tesseract (brew / apt); Studio explains how to add it if it's missing.
+      - name: Install Tesseract (Windows, to bundle)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install tesseract -y --no-progress
+          $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+          Invoke-WebRequest -Uri https://github.com/tesseract-ocr/tessdata_fast/raw/main/fra.traineddata -OutFile "$tessdata\fra.traineddata"
+      - name: Install Tesseract (macOS, for the smoke test)
+        if: runner.os == 'macOS'
+        run: brew install tesseract tesseract-lang
+      - name: Install Tesseract (Linux, for the smoke test)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-fra
+      - name: Build UI, freeze with PyInstaller, smoke-test, zip (Windows, bundling Tesseract)
+        if: runner.os == 'Windows'
+        run: python packaging/build.py --bundle-tesseract "C:\Program Files\Tesseract-OCR"
       - name: Build UI, freeze with PyInstaller, smoke-test, zip
+        if: runner.os != 'Windows'
         run: python packaging/build.py
       - uses: actions/upload-artifact@v4
         with:

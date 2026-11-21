@@ -9,7 +9,7 @@ from .injection import InjectionReport, analyze, wrap_untrusted
 from .output_scan import scan_output
 from .redactor import RedactionResult, Redactor
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "ALL_KINDS",

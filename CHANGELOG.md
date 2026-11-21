@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-11-21
+
+### Added
+- **Scanned PDFs and fax images** (`.tif`, `.png`, `.jpg`) are read with Tesseract OCR, offline and in memory.
+  PDF pages without a text layer are OCR'd, so a typed cover sheet followed by faxed pages works.
+- **Redacted copy of a scan:** the original pages with black boxes over detected details, as an image-only PDF.
+- Studio: OCR confidence and page previews on upload, a notice asking users to check names and numbers against
+  the scan, "Download redacted scan (PDF)", OCR on/off and English/French settings, OCR status in Settings and
+  Help, scan badges in batch results.
+- Batch and CLI: scans produce `.txt` plus `*.redacted-scan.pdf`; `summary.csv` gains `read_from_scan` and
+  `ocr_confidence`; `--no-ocr`, `--ocr-lang`, and `phi-guard ocr-status`.
+- OCR benchmark (`eval/ocr_eval.py`, `eval/RESULTS_OCR.md`): clean scans, standard faxes and bad faxes on the
+  test split, with a pixel-accurate check of the black boxes.
+- Docker image and Windows release builds include Tesseract; CI installs it.
+
 ## [0.2.0] - 2026-11-19
 
 ### Added
