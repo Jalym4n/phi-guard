@@ -267,3 +267,22 @@ def test_cli_reads_fax_and_reports_status(tmp_path, capsys, monkeypatch):
     assert main(["ocr-status"]) == 1
     with pytest.raises(SystemExit, match="add-on"):
         main(["scan", str(fax)])
+
+
+def test_redaction_box_hides_word_count_and_lengths():
+    """A multi-word detail on one line becomes a single solid box (no gaps that reveal word lengths)."""
+    from PIL import Image
+
+    words = [
+        ocr.OcrWord("Patient:", 0, (10, 10, 80, 30), 95, 0, 8),
+        ocr.OcrWord("Eleanor", 0, (90, 12, 160, 30), 95, 9, 16),
+        ocr.OcrWord("Whitfield", 0, (170, 10, 260, 31), 95, 17, 26),
+        ocr.OcrWord("Clara", 0, (10, 60, 60, 80), 95, 27, 32),  # next line
+    ]
+    result = ocr.OcrResult("Patient: Eleanor Whitfield\nClara", words, [Image.new("L", (300, 100), 255)])
+    page = ocr.redact_images(result, [(9, 26), (27, 32)], pad=2)[0]
+    gap = [page.getpixel((x, 20)) for x in range(160, 171)]  # the space between "Eleanor" and "Whitfield"
+    assert gap == [0] * len(gap)
+    assert page.getpixel((40, 20)) == 255  # "Patient:" untouched
+    assert page.getpixel((30, 70)) == 0  # second line boxed separately
+    assert page.getpixel((100, 50)) == 255  # nothing drawn between the lines

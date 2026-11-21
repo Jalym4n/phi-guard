@@ -335,21 +335,40 @@ def _parse_tsv(tsv: str, page: int, base: int) -> tuple[str, list[OcrWord]]:
 
 
 def redact_images(result: OcrResult, spans: Iterable[tuple[int, int]], pad: int = 3) -> list[Any]:
-    """Copies of the page images with a solid black box over every word touched by a span.
+    """Copies of the page images with solid black boxes over every word touched by a span.
 
-    Whole words are covered even if a span touches only part of one: when in
-    doubt, black it out.
+    Whole words are covered even if a span touches only part of one (when in
+    doubt, black it out).  The words of one detail that sit on the same line are
+    merged into a single box, so the box doesn't reveal how many words the
+    detail had or how long each one was.
     """
     from PIL import ImageDraw
 
-    spans = sorted(spans)
     pages = [img.convert("L").copy() for img in result.images]
     draws = [ImageDraw.Draw(p) for p in pages]
-    for w in result.words:
-        if any(s < w.end and w.start < e for s, e in spans):
-            left, top, right, bottom = w.box
-            draws[w.page].rectangle((left - pad, top - pad, right + pad, bottom + pad), fill=0)
+    for s, e in sorted(spans):
+        line: list[OcrWord] = []
+        for w in (w for w in result.words if s < w.end and w.start < e):
+            if line and (w.page != line[-1].page or not _same_line(w, line[-1])):
+                _draw_box(draws[line[0].page], line, pad)
+                line = []
+            line.append(w)
+        if line:
+            _draw_box(draws[line[0].page], line, pad)
     return pages
+
+
+def _same_line(a: OcrWord, b: OcrWord) -> bool:
+    overlap = min(a.box[3], b.box[3]) - max(a.box[1], b.box[1])
+    return overlap > 0.5 * min(a.box[3] - a.box[1], b.box[3] - b.box[1])
+
+
+def _draw_box(draw: Any, words: list[OcrWord], pad: int) -> None:
+    left = min(w.box[0] for w in words) - pad
+    top = min(w.box[1] for w in words) - pad
+    right = max(w.box[2] for w in words) + pad
+    bottom = max(w.box[3] for w in words) + pad
+    draw.rectangle((left, top, right, bottom), fill=0)
 
 
 def images_to_pdf(images: Sequence[Any], dpi: int = RENDER_DPI) -> bytes:
