@@ -31,6 +31,8 @@ class Settings(BaseModel):
     text_size: Literal["normal", "large", "larger"] = "normal"
     theme: Literal["system", "light", "dark"] = "system"
     ner_enabled: bool = False
+    ocr_enabled: bool = True  # read scanned PDFs and fax images (needs Tesseract)
+    ocr_language: Literal["eng", "eng+fra"] = "eng"
     idle_timeout_minutes: int = Field(default=30, ge=1, le=480)
     max_upload_mb: int = Field(default=20, ge=1, le=100)
     batch_max_files: int = Field(default=200, ge=1, le=1000)

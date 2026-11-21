@@ -44,7 +44,14 @@ async def start_batch(request: Request, studio: Studio = Depends(get_studio)) ->
 
     job = BatchJob(id=secrets.token_urlsafe(12), total=len(files))
     studio.session.jobs[job.id] = job
-    options = {"kinds": s.enabled_kinds, "dictionary": s.dictionary(), "ner": s.ner_enabled and studio.ner_available}
+    from .core import ocr_options
+
+    options = {
+        "kinds": s.enabled_kinds,
+        "dictionary": s.dictionary(),
+        "ner": s.ner_enabled and studio.ner_available,
+        **ocr_options(studio),
+    }
     redactor = studio.session.redactor
 
     def work() -> None:
@@ -66,6 +73,7 @@ async def start_batch(request: Request, studio: Studio = Depends(get_studio)) ->
                 "batch",
                 files=len(job.items),
                 done=sum(it.status == "done" for it in job.items),
+                read_from_scan=sum(it.read_from_scan for it in job.items),
                 errors=sum(it.status == "error" for it in job.items),
                 counts=counts,
                 verdicts=sorted({it.verdict for it in job.items if it.verdict}),

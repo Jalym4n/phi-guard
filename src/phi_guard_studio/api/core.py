@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 from typing import Any
 
@@ -9,7 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from starlette.datastructures import UploadFile
 
-from phi_guard.documents import DocumentError, detect_kind, docx_with_replacements, extract_text
+from phi_guard import ocr as ocr_mod
+from phi_guard.documents import (
+    DocumentError,
+    ExtractedDocument,
+    detect_kind,
+    docx_with_replacements,
+    extract_text,
+    redacted_scan_pdf,
+)
 from phi_guard.finding import Finding, from_utf16, utf16_index_map
 from phi_guard.injection import analyze
 from phi_guard.output_scan import scan_output
@@ -48,6 +58,47 @@ def findings_out(text: str, findings: list[Finding]) -> list[dict[str, Any]]:
 
 def summary(counts: dict[str, int]) -> list[dict[str, Any]]:
     return [{"kind": k, "label": KIND_LABELS.get(k, k), "count": n} for k, n in counts.items()]
+
+
+MAX_PREVIEW_PAGES = 10
+PREVIEW_WIDTH = 900
+
+
+def ocr_options(studio: Studio) -> dict[str, Any]:
+    """OCR settings for extract_text.  French is only used if its language data is installed."""
+    s = studio.settings.get()
+    lang = s.ocr_language
+    if lang != "eng" and "fra" not in ocr_mod.tesseract_info()["languages"]:
+        lang = "eng"
+    return {"ocr": s.ocr_enabled, "ocr_lang": lang}
+
+
+def ocr_out(doc: ExtractedDocument) -> dict[str, Any]:
+    return {
+        "used": doc.used_ocr,
+        "pages": doc.ocr_pages,
+        "confidence": doc.ocr_confidence,
+        "low_confidence_words": doc.low_confidence_words,
+        "full_scan": doc.ocr is not None,
+    }
+
+
+def previews(doc: ExtractedDocument) -> list[str]:
+    """Small JPEG previews of scanned pages (data URLs), so users can compare OCR text with the scan.
+
+    Built in memory from the images already decoded for OCR; never written to disk.
+    """
+    if doc.ocr is None:
+        return []
+    out = []
+    for img in doc.ocr.images[:MAX_PREVIEW_PAGES]:
+        page = img.convert("L")
+        if page.width > PREVIEW_WIDTH:
+            page = page.resize((PREVIEW_WIDTH, round(page.height * PREVIEW_WIDTH / page.width)))
+        buf = io.BytesIO()
+        page.save(buf, "JPEG", quality=70)
+        out.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
+    return out
 
 
 def _scan_options(studio: Studio) -> dict[str, Any]:
@@ -100,11 +151,13 @@ def _redact(studio: Studio, body: RedactIn) -> tuple[Any, str]:
 @router.get("/health")
 def health(studio: Studio = Depends(get_studio)) -> dict[str, Any]:
     status = studio.keystore.status()
+    info = ocr_mod.tesseract_info()
     return {
         "status": "ok",
         "version": __version__,
         "ner_available": studio.ner_available,
         "key_backend": status.backend,
+        "ocr": {"available": info["available"], "version": info["version"], "languages": info["languages"]},
     }
 
 
@@ -185,11 +238,13 @@ async def redact_docx(request: Request, studio: Studio = Depends(get_studio)) ->
 async def extract(request: Request, studio: Studio = Depends(get_studio)) -> dict[str, Any]:
     name, data, _ = await read_upload(request, studio)
     try:
-        doc = extract_text(data, name)
+        doc = extract_text(data, name, **ocr_options(studio))
     except DocumentError as exc:
         raise HTTPException(422, str(exc)) from exc
     # The file name is deliberately not logged: names like "Smith_J_referral.docx" are patient details.
-    studio.audit_event("open_file", kind=doc.kind, size_kb=round(len(data) / 1024))
+    studio.audit_event(
+        "open_file", kind=doc.kind, size_kb=round(len(data) / 1024), pages=doc.pages, ocr_pages=len(doc.ocr_pages)
+    )
     return {
         "text": doc.text,
         "kind": doc.kind,
@@ -197,7 +252,34 @@ async def extract(request: Request, studio: Studio = Depends(get_studio)) -> dic
         "warnings": doc.warnings,
         "filename": name,
         "size": len(data),
+        "ocr": ocr_out(doc),
+        "previews": previews(doc),
     }
+
+
+@router.post("/redact/scan")
+async def redact_scan(request: Request, studio: Studio = Depends(get_studio)) -> Response:
+    """Re-send a scanned file with the same decisions; get back the scan with black boxes over the details.
+
+    OCR is deterministic, so re-reading the file reproduces the text and offsets the user reviewed.
+    The output PDF contains only images (no hidden text layer).
+    """
+    name, data, fields = await read_upload(request, studio)
+    try:
+        doc = extract_text(data, name, **ocr_options(studio))
+        if doc.ocr is None:
+            raise HTTPException(422, "A redacted copy of the scan is only available for fully scanned documents.")
+        body = RedactIn.model_validate({**json.loads(fields.get("options", "{}")), "text": doc.text, "final": True})
+    except DocumentError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, "The redaction options were not valid.") from exc
+    result, _ = _redact(studio, body)
+    pdf = redacted_scan_pdf(doc, [(f.start, f.end) for f in result.findings])
+    studio.audit_event("redact", mode=body.mode, counts=result.counts(), kept=len(result.kept), output="scan")
+    return Response(
+        pdf, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="redacted-scan.pdf"'}
+    )
 
 
 @router.post("/inject")

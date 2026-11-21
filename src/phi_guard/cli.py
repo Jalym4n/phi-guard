@@ -1,6 +1,6 @@
 """Command-line interface.
 
-``phi-guard scan|redact|inject|check|verify|batch|output-scan|eval``
+``phi-guard scan|redact|inject|check|verify|batch|output-scan|ocr-status|eval``
 """
 
 from __future__ import annotations
@@ -22,13 +22,23 @@ from .output_scan import scan_output
 from .redactor import MODES, Redactor
 
 
-def _read(path: str | None) -> str:
+def _read(path: str | None, args: argparse.Namespace | None = None) -> str:
     if path is None or path == "-":
         return sys.stdin.read()
-    if Path(path).suffix.lower() in (".docx", ".pdf"):
-        from .documents import extract_text
+    from .documents import IMAGE_EXTENSIONS
 
-        return extract_text(path).text
+    if Path(path).suffix.lower() in (".docx", ".pdf", *IMAGE_EXTENSIONS):
+        from .documents import DocumentError, extract_text
+
+        try:
+            doc = extract_text(
+                path, ocr=not getattr(args, "no_ocr", False), ocr_lang=getattr(args, "ocr_lang", "eng") or "eng"
+            )
+        except DocumentError as exc:
+            raise SystemExit(f"error: {exc}") from exc
+        for warning in doc.warnings:
+            print(f"note: {warning}", file=sys.stderr)
+        return doc.text
     with open(path, encoding="utf-8") as fh:
         return fh.read()
 
@@ -53,6 +63,8 @@ def _detection_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--always", metavar="FILE", help="word list: always remove these terms (one per line)")
     p.add_argument("--never", metavar="FILE", help="word list: never remove these terms (one per line)")
     p.add_argument("--ner", action="store_true", help="also find names with spaCy (needs the [ner] extra)")
+    p.add_argument("--no-ocr", action="store_true", help="don't read scanned PDFs or images with OCR")
+    p.add_argument("--ocr-lang", default="eng", help="Tesseract language(s) for scans, e.g. eng or eng+fra")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("verify", help="verify an audit log's hash chain")
     v.add_argument("log")
 
-    b = sub.add_parser("batch", help="redact every .txt/.docx/.pdf in a folder")
+    b = sub.add_parser("batch", help="redact every .txt/.docx/.pdf and scanned image in a folder")
     b.add_argument("folder")
     b.add_argument("--out", required=True, help="output folder (created if missing)")
     b.add_argument("--mode", choices=MODES, default="mask")
@@ -95,6 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("file", nargs="?")
     o.add_argument("--json", action="store_true")
 
+    sub.add_parser("ocr-status", help="check whether scanned documents can be read (Tesseract OCR)")
+
     e = sub.add_parser("eval", help="regenerate the benchmark dataset and results (run from the repo root)")
     e.add_argument("--quick", action="store_true", help="small dataset for a fast smoke run")
     return p
@@ -104,7 +118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.cmd == "scan":
-        findings = scan(_read(args.file), _kinds(args), dictionary=_dictionary(args), ner=args.ner)
+        findings = scan(_read(args.file, args), _kinds(args), dictionary=_dictionary(args), ner=args.ner)
         if args.json:
             print(json.dumps([f.to_dict() for f in findings], indent=2))
         else:
@@ -115,7 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.cmd == "redact":
         result = Redactor(mode=args.mode).redact(
-            _read(args.file), _kinds(args), dictionary=_dictionary(args), ner=args.ner
+            _read(args.file, args), _kinds(args), dictionary=_dictionary(args), ner=args.ner
         )
         print(result.text, end="")
         return 0
@@ -161,6 +175,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.cmd == "eval":
         return _eval(args)
 
+    if args.cmd == "ocr-status":
+        from .ocr import tesseract_info
+
+        info = tesseract_info()
+        if info["available"]:
+            print(f"OCR ready: Tesseract {info['version']} at {info['path']}")
+            print(f"languages: {', '.join(info['languages'])}")
+            return 0
+        print("OCR not available: install Tesseract (https://tesseract-ocr.github.io/) to read scans and faxes.")
+        return 1
+
     return 1  # pragma: no cover
 
 
@@ -177,13 +202,23 @@ def _batch(args: argparse.Namespace) -> int:
     files = [(name, path.read_bytes()) for name, path in iter_folder(src, recursive=not args.no_recursive)]
     redactor = Redactor(mode=args.mode)
     log = AuditLog(args.log) if args.log else None
-    items = run_batch(files, redactor, kinds=_kinds(args), dictionary=_dictionary(args), ner=args.ner)
+    items = run_batch(
+        files,
+        redactor,
+        kinds=_kinds(args),
+        dictionary=_dictionary(args),
+        ner=args.ner,
+        ocr=not args.no_ocr,
+        ocr_lang=args.ocr_lang,
+    )
     out.mkdir(parents=True, exist_ok=True)
     for it in items:
         if it.status == "done":
             target = out / it.output_name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(it.output)
+            for extra_name, blob in it.extra_outputs.items():
+                (out / extra_name).write_bytes(blob)
         if log is not None:
             log.append("batch_file", source="cli", status=it.status, counts=it.counts, verdict=it.verdict or None)
         print(f"{it.status:<8} {it.name}" + (f"  ({it.reason})" if it.reason else ""))

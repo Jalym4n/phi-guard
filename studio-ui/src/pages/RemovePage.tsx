@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCopy, Download, FileText, RotateCcw, Search, Sparkles } from "lucide-react";
+import { ClipboardCopy, Download, FileImage, FileText, RotateCcw, Search, Sparkles } from "lucide-react";
 import { api, errorMessage, saveBlob, type RedactOptions } from "../lib/api";
 import { EXAMPLE_NOTE } from "../lib/examples";
 import { describeCounts, kindStyle, MANUAL_KINDS } from "../lib/kinds";
 import { findAll, selectionOffsets, trimSpan } from "../lib/selection";
 import type { ExtractResult, Finding, ManualKind, ManualSpan, Mode } from "../lib/types";
 import { FileDrop } from "../components/FileDrop";
+import { ScanNotice } from "../components/ScanNotice";
 import { FindingList, type ChipItem } from "../components/FindingList";
 import { HighlightedText, type Highlight } from "../components/HighlightedText";
 import { Banner, Button, Card, PageHeader, TextArea, formatBytes } from "../components/ui";
@@ -204,6 +205,23 @@ function SingleDocument({ defaultMode }: Props) {
     }
   }
 
+  // The redacted copy of a scan needs the exact OCR text the server will re-create,
+  // so it is only offered if the user didn't edit the text.
+  const scanCopyAvailable = Boolean(file && fileInfo?.ocr.full_scan && reviewText === fileInfo.text);
+  const scanEdited = Boolean(fileInfo?.ocr.full_scan && reviewText !== null && reviewText !== fileInfo.text);
+
+  async function downloadScan() {
+    if (!file || !scanCopyAvailable) return;
+    setError(null);
+    const stem = (fileInfo?.filename ?? "scan").replace(/\.[^.]+$/, "");
+    try {
+      saveBlob(await api.redactScan(file, options), `${stem}-redacted-scan.pdf`);
+      setNotice("Download started: a copy of the scan with black boxes over the details. It contains no hidden text.");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   async function download() {
     if (reviewText === null) return;
     setError(null);
@@ -303,11 +321,14 @@ function SingleDocument({ defaultMode }: Props) {
                 </span>
               </p>
             )}
-            {fileInfo?.warnings.map((w) => (
-              <Banner key={w} tone="warning">
-                {w}
-              </Banner>
-            ))}
+            {fileInfo && <ScanNotice file={fileInfo} />}
+            {fileInfo?.warnings
+              .filter((w) => !w.includes("read from a scanned image"))
+              .map((w) => (
+                <Banner key={w} tone="warning">
+                  {w}
+                </Banner>
+              ))}
             <FileDrop onFile={onFile} busy={busy} />
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="primary" size="lg" onClick={find} disabled={busy}>
@@ -339,6 +360,12 @@ function SingleDocument({ defaultMode }: Props) {
             <h2 ref={resultsRef} tabIndex={-1} className="text-xl font-semibold" aria-live="polite">
               {totalFound === 0 ? "No patient details found." : describeCounts(foundCounts)}
             </h2>
+            {fileInfo?.ocr.used && (
+              <p className="mt-1 text-slate-700 dark:text-slate-300">
+                Read from a scan: compare the highlights with the original, especially names and numbers.
+                {scanEdited && " The redacted copy of the scan isn't available because the text was edited."}
+              </p>
+            )}
             {keep.size > 0 && (
               <p className="mt-1 text-slate-700 dark:text-slate-300">
                 You chose to keep {keep.size}. {describeCounts(counts).replace("Found", "Removing")}
@@ -373,6 +400,11 @@ function SingleDocument({ defaultMode }: Props) {
               <Button onClick={download}>
                 <Download aria-hidden className="h-5 w-5" /> Download {fileInfo?.kind === "docx" ? "Word file" : "text file"}
               </Button>
+              {scanCopyAvailable && (
+                <Button onClick={downloadScan}>
+                  <FileImage aria-hidden className="h-5 w-5" /> Download redacted scan (PDF)
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => setReviewText(null)}>
                 Edit the original
               </Button>

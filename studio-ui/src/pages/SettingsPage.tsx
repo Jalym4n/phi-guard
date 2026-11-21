@@ -156,6 +156,48 @@ export function SettingsPage({ onSaved }: { onSaved: (s: Settings) => void }) {
       </Card>
 
       <Card>
+        <h2 className="mb-2 text-xl font-semibold">Scanned documents and faxes</h2>
+        {loaded.ocr.available ? (
+          <>
+            <p className="text-slate-700 dark:text-slate-300">
+              <span className="font-medium text-emerald-800 dark:text-emerald-300">Ready.</span> Studio can read scanned
+              PDFs and fax or phone images using its text-recognition add-on
+              {loaded.ocr.version ? ` (Tesseract ${loaded.ocr.version})` : ""}. Reading a scan takes a few seconds per
+              page, and the text should always be checked against the original.
+            </p>
+            <Toggle
+              id="ocr-enabled"
+              label="Read scanned documents and faxes"
+              description="Turns on text recognition for scanned PDFs and .tif, .png and .jpg images."
+              checked={current.ocr_enabled}
+              onChange={(v) => update({ ocr_enabled: v })}
+            />
+            <fieldset className="mt-2" disabled={!current.ocr_enabled}>
+              <legend className="font-medium">Language of scanned documents</legend>
+              <div className="mt-2 flex flex-wrap gap-5">
+                {choice("ocr-lang", "eng", current.ocr_language, "English", () => update({ ocr_language: "eng" }))}
+                {loaded.ocr.languages.includes("fra") &&
+                  choice("ocr-lang", "eng+fra", current.ocr_language, "English and French", () =>
+                    update({ ocr_language: "eng+fra" }),
+                  )}
+              </div>
+              {!loaded.ocr.languages.includes("fra") && (
+                <p className="mt-1 text-slate-600 dark:text-slate-400">
+                  French is available once the French language pack for Tesseract is installed.
+                </p>
+              )}
+            </fieldset>
+          </>
+        ) : (
+          <Banner tone="info" title="Not set up yet">
+            Studio can read scanned PDFs and faxes once its free text-recognition add-on, Tesseract, is installed on
+            this computer. Ask your IT provider to install it (on Windows, the &ldquo;Tesseract-OCR&rdquo; installer;
+            on Mac, <code>brew install tesseract</code>), then restart Studio. Typed documents work without it.
+          </Banner>
+        )}
+      </Card>
+
+      <Card>
         <div className="grid gap-6 lg:grid-cols-2">
           <WordList
             id="always-remove"

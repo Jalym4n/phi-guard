@@ -24,6 +24,8 @@ dependencies = []
 
 [project.optional-dependencies]
 docs = ["python-docx>=1.1", "pypdf>=4.3"]
+# Reading scanned PDFs and fax images.  Also needs the Tesseract program installed on the system.
+ocr = ["pillow>=10.1", "pypdfium2>=4.30"]
 ner = ["spacy>=3.7,<4"]
 studio = [
     "fastapi>=0.115",
@@ -32,11 +34,13 @@ studio = [
     "python-multipart>=0.0.9",
     "python-docx>=1.1",
     "pypdf>=4.3",
+    "pillow>=10.1",
+    "pypdfium2>=4.30",
     "keyring>=25",
     "cryptography>=43",
     "platformdirs>=4",
 ]
-eval = ["faker>=26", "matplotlib>=3.8", "python-docx>=1.1", "pypdf>=4.3"]
+eval = ["faker>=26", "matplotlib>=3.8", "python-docx>=1.1", "pypdf>=4.3", "pillow>=10.1", "pypdfium2>=4.30"]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
@@ -79,7 +83,7 @@ files = ["src/phi_guard", "src/phi_guard_studio"]
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
-module = ["docx.*", "pypdf.*", "spacy.*", "keyring.*", "presidio_analyzer.*", "faker.*", "matplotlib.*", "reportlab.*"]
+module = ["docx.*", "pypdf.*", "pypdfium2.*", "PIL.*", "spacy.*", "keyring.*", "presidio_analyzer.*", "faker.*", "matplotlib.*", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

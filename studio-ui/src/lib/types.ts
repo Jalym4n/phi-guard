@@ -41,13 +41,31 @@ export interface RedactResult {
   kept: number;
 }
 
+export interface OcrInfo {
+  used: boolean;
+  pages: number[];
+  confidence: number | null;
+  low_confidence_words: number;
+  /** Every page was read from a scan, so a redacted copy of the scan can be made. */
+  full_scan: boolean;
+}
+
 export interface ExtractResult {
   text: string;
-  kind: "txt" | "docx" | "pdf";
+  kind: "txt" | "docx" | "pdf" | "image";
   pages: number | null;
   warnings: string[];
   filename: string;
   size: number;
+  ocr: OcrInfo;
+  /** JPEG data URLs of scanned pages, for comparing the text with the original. */
+  previews: string[];
+}
+
+export interface OcrStatus {
+  available: boolean;
+  version: string | null;
+  languages: string[];
 }
 
 export interface InjectFinding {
@@ -91,6 +109,9 @@ export interface BatchItem {
   verdict: string;
   score: number;
   output_name: string;
+  extra_outputs: string[];
+  read_from_scan: boolean;
+  ocr_confidence: number | null;
 }
 
 export interface BatchStatus {
@@ -128,6 +149,8 @@ export interface Settings {
   text_size: "normal" | "large" | "larger";
   theme: "system" | "light" | "dark";
   ner_enabled: boolean;
+  ocr_enabled: boolean;
+  ocr_language: "eng" | "eng+fra";
   idle_timeout_minutes: number;
   max_upload_mb: number;
   batch_max_files: number;
@@ -145,6 +168,7 @@ export interface SettingsResponse {
   settings: Settings;
   detectors: { kind: string; label: string; example: string }[];
   ner_available: boolean;
+  ocr: OcrStatus;
   audit_path: string;
   key: KeyStatus;
 }

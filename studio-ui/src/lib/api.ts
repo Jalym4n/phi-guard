@@ -126,6 +126,12 @@ export const api = {
     data.append("options", JSON.stringify(options));
     return blob("/api/redact/docx", { method: "POST", body: data });
   },
+  redactScan: (file: File, options: RedactOptions) => {
+    const data = new FormData();
+    data.append("file", file);
+    data.append("options", JSON.stringify(options));
+    return blob("/api/redact/scan", { method: "POST", body: data });
+  },
   extract: (file: File) => {
     const data = new FormData();
     data.append("file", file);

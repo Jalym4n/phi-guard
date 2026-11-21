@@ -1,9 +1,12 @@
 import { useRef, useState, type DragEvent } from "react";
 import { Upload } from "lucide-react";
 
+/** Typed documents plus scanned PDFs and fax or phone images (read with OCR). */
+export const ACCEPTED_FILES = ".txt,.docx,.pdf,.png,.jpg,.jpeg,.tif,.tiff";
+
 export function FileDrop({
   onFile,
-  accept = ".txt,.docx,.pdf",
+  accept = ACCEPTED_FILES,
   label = "Or add a file",
   busy = false,
   testId = "file-input",
@@ -39,7 +42,9 @@ export function FileDrop({
     >
       <Upload aria-hidden className="h-6 w-6 text-slate-500" />
       <span className="font-medium">{label}:</span>
-      <span className="text-slate-600 dark:text-slate-400">drag a .txt, .docx or .pdf file here, or</span>
+      <span className="text-slate-600 dark:text-slate-400">
+        drag a .txt, .docx or .pdf file, or a scanned fax or photo (.tif, .png, .jpg) here, or
+      </span>
       <button
         type="button"
         disabled={busy}

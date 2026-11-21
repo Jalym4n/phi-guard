@@ -53,11 +53,22 @@ def test_docx_with_replacements_spans_and_callable():
     assert docx.Document(io.BytesIO(out3)).paragraphs[0].text == "PATIENT: ELEANOR WHITFIELD"
 
 
-def test_text_pdf_and_scanned_pdf():
+def test_text_pdf_and_blank_scan():
     doc = extract_text(make_pdf(["Patient: Eleanor Whitfield", "SIN 123 456 782"]), "r.pdf")
-    assert doc.kind == "pdf" and doc.pages == 1 and "Eleanor Whitfield" in doc.text
-    with pytest.raises(ScannedPdfError, match="scanned image"):
+    assert doc.kind == "pdf" and doc.pages == 1 and "Eleanor Whitfield" in doc.text and not doc.used_ocr
+    # A page that is only a picture with no text in it: friendly message whether or not OCR is installed.
+    with pytest.raises(ScannedPdfError, match=r"readable text|scanned image"):
         extract_text(make_pdf(None), "scan.pdf")
+
+
+def test_scanned_pdf_without_ocr_engine(monkeypatch):
+    from phi_guard import ocr
+
+    monkeypatch.setattr(ocr, "find_tesseract", lambda: None)
+    with pytest.raises(ScannedPdfError, match="text-recognition add-on"):
+        extract_text(make_pdf(None), "scan.pdf")
+    with pytest.raises(ScannedPdfError, match="turned off"):
+        extract_text(make_pdf(None), "scan.pdf", ocr=False)
 
 
 def test_damaged_pdf_and_docx():
@@ -78,6 +89,7 @@ def test_damaged_pdf_and_docx():
         (b"#!/bin/sh\nrm -rf /", "run.txt"),
         (b"\x1f\x8b\x08\x00", "a.txt"),
         (b"plain", "virus.exe"),
+        (b"%PDF-1.7", "fax.tiff"),
         (b"\x00\x01\x02binary", "x.txt"),
         (b"PK\x03\x04broken", "x.docx"),
     ],

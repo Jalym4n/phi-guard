@@ -20,14 +20,30 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from .detectors import ALL_KINDS
-from .documents import SUPPORTED_EXTENSIONS, DocumentError, docx_with_replacements, extract_text
+from .documents import (
+    IMAGE_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
+    DocumentError,
+    docx_with_replacements,
+    extract_text,
+    redacted_scan_pdf,
+)
 from .injection import analyze
 from .redactor import Redactor
 
 if TYPE_CHECKING:
     from .dictionary import Dictionary
 
-__all__ = ["BatchItem", "iter_folder", "output_name", "process_file", "run_batch", "summary_csv", "write_zip"]
+__all__ = [
+    "BatchItem",
+    "iter_folder",
+    "output_name",
+    "process_file",
+    "run_batch",
+    "scan_output_name",
+    "summary_csv",
+    "write_zip",
+]
 
 
 @dataclass
@@ -40,6 +56,10 @@ class BatchItem:
     score: float = 0.0
     output_name: str = ""
     output: bytes = field(default=b"", repr=False)
+    #: Extra files for the ZIP, e.g. a redacted copy of a scan: {name: bytes}.
+    extra_outputs: dict[str, bytes] = field(default_factory=dict, repr=False)
+    read_from_scan: bool = False
+    ocr_confidence: float | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -50,13 +70,22 @@ class BatchItem:
             "verdict": self.verdict,
             "score": round(self.score, 4),
             "output_name": self.output_name,
+            "extra_outputs": sorted(self.extra_outputs),
+            "read_from_scan": self.read_from_scan,
+            "ocr_confidence": self.ocr_confidence,
         }
 
 
 def output_name(name: str) -> str:
-    """Redacted output keeps the name and folder; PDFs become .txt (text only)."""
+    """Redacted output keeps the name and folder; PDFs and scanned images become .txt (text only)."""
     p = PurePosixPath(name.replace("\\", "/"))
-    return str(p.with_suffix(".txt")) if p.suffix.lower() == ".pdf" else str(p)
+    return str(p.with_suffix(".txt")) if p.suffix.lower() in (".pdf", *IMAGE_EXTENSIONS) else str(p)
+
+
+def scan_output_name(name: str) -> str:
+    """Name for the redacted copy of a scan: ``fax.tiff`` becomes ``fax.redacted-scan.pdf``."""
+    p = PurePosixPath(name.replace("\\", "/"))
+    return str(p.with_name(f"{p.stem}.redacted-scan.pdf"))
 
 
 def process_file(
@@ -68,14 +97,20 @@ def process_file(
     dictionary: Dictionary | None = None,
     ner: bool = False,
     mode: str | None = None,
+    ocr: bool = True,
+    ocr_lang: str = "eng",
 ) -> BatchItem:
-    """Redact one file.  ``mode`` overrides the redactor's default mode."""
+    """Redact one file.  ``mode`` overrides the redactor's default mode.
+
+    Fully scanned files (scanned PDFs, fax images) also get a redacted copy of
+    the scan itself, with black boxes over the details.
+    """
     suffix = PurePosixPath(name).suffix.lower()
     base = PurePosixPath(name.replace("\\", "/")).name
     if base.startswith(".") or suffix not in SUPPORTED_EXTENSIONS:
-        return BatchItem(name, "skipped", "Not a .txt, .docx or .pdf file")
+        return BatchItem(name, "skipped", "Not a .txt, .docx, .pdf or scanned image file")
     try:
-        doc = extract_text(data, base)
+        doc = extract_text(data, base, ocr=ocr, ocr_lang=ocr_lang)
     except DocumentError as exc:
         return BatchItem(name, "error", str(exc))
     kinds_list = list(kinds) if kinds is not None else None
@@ -86,8 +121,23 @@ def process_file(
         output = docx_with_replacements(data, spans)
     else:
         output = result.text.encode("utf-8")
+    extra: dict[str, bytes] = {}
+    if doc.ocr is not None:
+        extra[scan_output_name(name)] = redacted_scan_pdf(doc, [(f.start, f.end) for f in result.findings])
     reason = " ".join(doc.warnings)
-    return BatchItem(name, "done", reason, result.counts(), report.verdict, report.score, output_name(name), output)
+    return BatchItem(
+        name,
+        "done",
+        reason,
+        result.counts(),
+        report.verdict,
+        report.score,
+        output_name(name),
+        output,
+        extra,
+        doc.used_ocr,
+        doc.ocr_confidence,
+    )
 
 
 def run_batch(
@@ -98,11 +148,15 @@ def run_batch(
     dictionary: Dictionary | None = None,
     ner: bool = False,
     progress: Callable[[int, BatchItem], None] | None = None,
+    ocr: bool = True,
+    ocr_lang: str = "eng",
 ) -> list[BatchItem]:
     kinds_list = list(kinds) if kinds is not None else None
     items: list[BatchItem] = []
     for i, (name, data) in enumerate(files, 1):
-        item = process_file(name, data, redactor, kinds=kinds_list, dictionary=dictionary, ner=ner)
+        item = process_file(
+            name, data, redactor, kinds=kinds_list, dictionary=dictionary, ner=ner, ocr=ocr, ocr_lang=ocr_lang
+        )
         items.append(item)
         if progress is not None:
             progress(i, item)
@@ -121,11 +175,24 @@ def summary_csv(items: Iterable[BatchItem]) -> str:
     kind_cols = [*ALL_KINDS, *extra]
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
-    writer.writerow(["file", "status", "reason", "total_found", *kind_cols, "injection_verdict", "injection_score"])
+    writer.writerow(
+        [
+            "file",
+            "status",
+            "reason",
+            "total_found",
+            *kind_cols,
+            "injection_verdict",
+            "injection_score",
+            "read_from_scan",
+            "ocr_confidence",
+        ]
+    )
     for it in items:
         row: list[object] = [it.name, it.status, it.reason, sum(it.counts.values())]
         row += [it.counts.get(k, 0) for k in kind_cols]
         row += [it.verdict, f"{it.score:.2f}" if it.status == "done" else ""]
+        row += ["yes" if it.read_from_scan else "no", f"{it.ocr_confidence:.2f}" if it.ocr_confidence else ""]
         writer.writerow([_safe_cell(c) for c in row])
     return buf.getvalue()
 
@@ -137,6 +204,8 @@ def write_zip(items: Iterable[BatchItem]) -> bytes:
         for it in items:
             if it.status == "done":
                 zf.writestr(f"redacted/{it.output_name}", it.output)
+                for extra_name, blob in it.extra_outputs.items():
+                    zf.writestr(f"redacted/{extra_name}", blob)
         zf.writestr("summary.csv", summary_csv(items))
     return buf.getvalue()
 

@@ -22,12 +22,20 @@ def _key_status(studio: Studio) -> dict[str, Any]:
     return {"exists": st.exists, "backend": st.backend, "location": st.location, "fingerprint": st.fingerprint}
 
 
+def _ocr_status() -> dict[str, Any]:
+    from phi_guard import ocr
+
+    info = ocr.tesseract_info()
+    return {"available": info["available"], "version": info["version"], "languages": info["languages"]}
+
+
 @router.get("/settings")
 def get_settings(studio: Studio = Depends(get_studio)) -> dict[str, Any]:
     return {
         "settings": studio.settings.get().model_dump(),
         "detectors": [{"kind": k, "label": label, "example": ex} for k, label, ex in DETECTOR_INFO],
         "ner_available": studio.ner_available,
+        "ocr": _ocr_status(),
         "audit_path": str(studio.audit.path),
         "key": _key_status(studio),
     }

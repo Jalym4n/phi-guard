@@ -3,6 +3,7 @@ import { CheckCircle2, Download, FolderOpen, Files, MinusCircle, XCircle } from 
 import { api, errorMessage, saveBlob } from "../lib/api";
 import { describeCounts } from "../lib/kinds";
 import type { BatchStatus, Mode, Settings } from "../lib/types";
+import { ACCEPTED_FILES } from "../components/FileDrop";
 import { Banner, Button, Card, formatBytes } from "../components/ui";
 
 interface Picked {
@@ -90,9 +91,10 @@ export function BatchPanel({ defaultMode }: { defaultMode: Mode }) {
       <Card>
         <h2 className="text-xl font-semibold">Remove patient details from many files</h2>
         <p className="mt-1 text-slate-700 dark:text-slate-300">
-          Choose a folder or several .txt, .docx or .pdf files. You get back a ZIP file with a safe copy of each file
-          and a summary sheet. The summary only lists counts, never the details themselves. PDF files come back as
-          plain text.
+          Choose a folder or several .txt, .docx or .pdf files, including scanned faxes (.pdf, .tif, .png, .jpg).
+          You get back a ZIP file with a safe copy of each file and a summary sheet. The summary only lists counts,
+          never the details themselves. PDFs and scans come back as plain text, and each scan also comes back as a
+          copy of the scan with black boxes over the details.
         </p>
         <p className="mt-1 text-slate-600 dark:text-slate-400">
           Limit: {limits.batch_max_files} files or {limits.batch_max_mb} MB per batch (change this in Settings).
@@ -111,7 +113,7 @@ export function BatchPanel({ defaultMode }: { defaultMode: Mode }) {
             ref={filesInput}
             type="file"
             multiple
-            accept=".txt,.docx,.pdf"
+            accept={ACCEPTED_FILES}
             className="sr-only"
             tabIndex={-1}
             aria-label="Choose files"
@@ -188,7 +190,15 @@ export function BatchPanel({ defaultMode }: { defaultMode: Mode }) {
                   const Icon = s.icon;
                   return (
                     <tr key={it.name} className="border-b border-slate-200 align-top dark:border-slate-700">
-                      <td className="py-2 pr-3 font-mono break-all">{it.name}</td>
+                      <td className="py-2 pr-3 font-mono break-all">
+                        {it.name}
+                        {it.read_from_scan && " "}
+                        {it.read_from_scan && (
+                          <span className="ml-2 rounded bg-sky-100 px-1.5 py-0.5 font-sans text-sm font-medium text-sky-950 dark:bg-sky-900 dark:text-sky-50">
+                            Read from scan{it.ocr_confidence ? ` (${Math.round(it.ocr_confidence * 100)}%)` : ""}
+                          </span>
+                        )}
+                      </td>
                       <td className={`py-2 pr-3 ${s.cls}`}>
                         <span className="inline-flex items-center gap-1 font-medium">
                           <Icon aria-hidden className="h-4 w-4" /> {s.label}

@@ -4,6 +4,8 @@ import { api, errorMessage } from "../lib/api";
 import { CLEAN_POLICY, POISONED_DOC } from "../lib/examples";
 import type { InjectResult } from "../lib/types";
 import { FileDrop } from "../components/FileDrop";
+import { ScanNotice } from "../components/ScanNotice";
+import type { ExtractResult } from "../lib/types";
 import { HighlightedText, type Highlight } from "../components/HighlightedText";
 import { Banner, Button, Card, PageHeader, TextArea, Toggle } from "../components/ui";
 import { RiskMeter, VerdictCard } from "../components/Verdict";
@@ -30,6 +32,7 @@ export function CheckPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [scan, setScan] = useState<ExtractResult | null>(null);
 
   async function check() {
     setError(null);
@@ -56,6 +59,7 @@ export function CheckPage() {
       const r = await api.extract(f);
       setText(r.text);
       setFileName(r.filename);
+      setScan(r.ocr.used ? r : null);
       setResult(null);
     } catch (e) {
       setError(errorMessage(e));
@@ -93,8 +97,9 @@ export function CheckPage() {
       {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
       <Card>
         <div className="space-y-4">
-          <TextArea id="check-text" label="Document to check" value={text} onChange={(v) => { setText(v); setFileName(null); }} rows={10} placeholder="Paste the document here…" />
+          <TextArea id="check-text" label="Document to check" value={text} onChange={(v) => { setText(v); setFileName(null); setScan(null); }} rows={10} placeholder="Paste the document here…" />
           {fileName && <p>Loaded <strong>{fileName}</strong>.</p>}
+          {scan && fileName && <ScanNotice file={scan} />}
           <FileDrop onFile={onFile} testId="check-file-input" busy={busy} />
           <div className="flex flex-wrap gap-3">
             <Button variant="primary" size="lg" onClick={check} disabled={busy}>

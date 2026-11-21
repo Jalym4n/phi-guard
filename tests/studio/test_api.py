@@ -95,7 +95,8 @@ def test_extract_txt_docx_pdf_and_scanned_pdf(client):
     p = client.post("/api/extract", files={"file": ("r.pdf", make_pdf(["Patient: Eleanor Whitfield"]))}).json()
     assert p["kind"] == "pdf" and p["pages"] == 1
     s = client.post("/api/extract", files={"file": ("scan.pdf", make_pdf(None))})
-    assert s.status_code == 422 and "scanned image" in s.json()["error"]
+    assert s.status_code == 422 and ("readable text" in s.json()["error"] or "add-on" in s.json()["error"])
+    assert r["ocr"]["used"] is False and r["previews"] == []
     assert client.post("/api/extract", data={"x": "1"}).status_code == 400
 
 
@@ -212,15 +213,16 @@ def test_batch_end_to_end(client):
         ("files", ("letters/b.docx", make_docx(["Patient: Eleanor Whitfield"]))),
         ("files", ("../../evil.txt", b"SIN 123 456 782")),
         ("files", ("scan.pdf", make_pdf(None))),
-        ("files", ("image.png", b"\x89PNG")),
+        ("files", ("image.png", b"\x89PNG\r\n\x1a\nbroken")),
+        ("files", ("song.mp3", b"ID3")),
     ]
     job = client.post("/api/batch", files=files, data={"mode": "mask"}).json()
-    assert job["total"] == 5
+    assert job["total"] == 6
     st = _wait(client, job["id"])
-    assert st["status"] == "done" and st["processed"] == 5
+    assert st["status"] == "done" and st["processed"] == 6
     by_name = {it["name"]: it["status"] for it in st["items"]}
     assert by_name == {"letters/a.txt": "done", "letters/b.docx": "done", "evil.txt": "done", "scan.pdf": "error",
-                       "image.png": "skipped"}  # fmt: skip
+                       "image.png": "error", "song.mp3": "skipped"}  # fmt: skip
     z = client.get(f"/api/batch/{job['id']}/download")
     assert z.headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(z.content)) as zf:
@@ -229,7 +231,7 @@ def test_batch_end_to_end(client):
         assert "summary.csv" in names and "redacted/letters/a.txt" in names
         assert "Whitfield" not in zf.read("summary.csv").decode()
         assert "Whitfield" not in zf.read("redacted/letters/a.txt").decode()
-    assert client.get("/api/audit", params={"action": "batch"}).json()["entries"][0]["files"] == 5
+    assert client.get("/api/audit", params={"action": "batch"}).json()["entries"][0]["files"] == 6
 
 
 def test_batch_limits_and_missing_jobs(client):

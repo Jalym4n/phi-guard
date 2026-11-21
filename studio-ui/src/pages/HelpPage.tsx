@@ -59,6 +59,30 @@ const SECTIONS: { id: string; q: string; body: JSX.Element; img?: { src: string;
     img: { src: "./help/check.png", alt: "A red “Do not use this document” result with a risk score of 100 and a list of plain-language warnings." },
   },
   {
+    id: "scans",
+    q: "Can Studio read scanned referrals and faxes?",
+    body: (
+      <>
+        <p>
+          Yes. Add a scanned PDF or a fax image (.tif, .png or .jpg) the same way as any other file. Studio reads the
+          text with its text-recognition add-on, which runs on this computer like everything else.
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-6">
+          <li>
+            Studio tells you how confident it was and lets you open the scanned pages next to the text. Check names,
+            dates and numbers: a misread digit can stop a health card number from being recognized.
+          </li>
+          <li>You can fix mistakes in the text before clicking Find patient details.</li>
+          <li>
+            For a fully scanned document you can also download a <strong>redacted copy of the scan</strong>: the
+            original pages with black boxes over the details. It contains only pictures, so nothing hidden is left
+            underneath.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "network",
     q: "Is my data sent anywhere?",
     body: (
@@ -87,7 +111,11 @@ const SECTIONS: { id: string; q: string; body: JSX.Element; img?: { src: string;
     q: "What can't Studio do?",
     body: (
       <ul className="list-disc space-y-1 pl-6">
-        <li>It can&apos;t read scanned images or photos of documents. Use the typed original, or copy the text.</li>
+        <li>
+          Scanned faxes and photos are read with text recognition, which can misread names and numbers, especially on
+          faint or crooked faxes. Always compare the text with the scan (use &ldquo;Show the scanned page&rdquo;).
+          Handwriting is not supported.
+        </li>
         <li>It is a helper, not a guarantee. Read the result before you share it.</li>
         <li>Studio is designed to support good privacy practice. It does not by itself make any use of AI compliant with privacy law.</li>
       </ul>

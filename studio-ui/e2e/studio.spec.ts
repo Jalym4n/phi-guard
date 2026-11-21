@@ -107,11 +107,53 @@ test("upload a .docx and download a redacted .docx", async ({ page, request }) =
   expect(text).toContain("Please assess for persistent cough.");
 });
 
-test("upload a text PDF; a scanned PDF gets a friendly message", async ({ page }) => {
+test("upload a text PDF; a blank scan gets a friendly message", async ({ page }) => {
   await page.getByTestId("file-input").setInputFiles(fixture("lab-report.pdf"));
   await expect(page.getByLabel("Text to make safe")).toHaveValue(/Eleanor Whitfield/);
+  await expect(page.getByTestId("scan-notice")).toHaveCount(0);
   await page.getByTestId("file-input").setInputFiles(fixture("scanned.pdf"));
-  await expect(page.getByRole("alert")).toContainText("scanned image");
+  await expect(page.getByRole("alert")).toContainText(/readable text|add-on/);
+});
+
+test("faxed referral: read with OCR, checked, and downloaded as a redacted scan", async ({ page, request }) => {
+  await page.getByTestId("file-input").setInputFiles(fixture("scanned-referral.pdf"));
+  const notice = page.getByTestId("scan-notice");
+  await expect(notice).toContainText("This text was read from a scanned image");
+  await expect(notice).toContainText(/\d+% confident/);
+  await expect(page.getByLabel("Text to make safe")).toHaveValue(/Eleanor Whitfield/);
+  await notice.getByText("Show the scanned page").click();
+  await expect(page.getByAltText("Scanned page 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Find patient details" }).click();
+  await expect(page.getByTestId("preview")).toContainText("[PATIENT_NAME_");
+  await expect(page.getByText(/Read from a scan: compare the highlights/)).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Download redacted scan (PDF)" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("scanned-referral-redacted-scan.pdf");
+  const body = readFileSync((await download.path())!);
+  expect(body.subarray(0, 5).toString()).toBe("%PDF-");
+  // Read the redacted scan back through Studio: the details must be under black boxes.
+  const r = await request.post("/api/extract", {
+    headers: { "X-PHI-Guard-Token": TOKEN },
+    multipart: { file: { name: "out.pdf", mimeType: "application/pdf", buffer: body } },
+  });
+  const text = ((await r.json()).text as string).toLowerCase();
+  expect(text).not.toContain("whitfield");
+  expect(text).not.toContain("5271");
+  expect(text).toContain("persistent cough");
+});
+
+test("editing OCR text disables the redacted-scan download and explains why", async ({ page }) => {
+  await page.getByTestId("file-input").setInputFiles(fixture("fax-referral.tif"));
+  await expect(page.getByTestId("scan-notice")).toBeVisible();
+  const box = page.getByLabel("Text to make safe");
+  await box.fill((await box.inputValue()) + "\nCorrected by staff.");
+  await page.getByRole("button", { name: "Find patient details" }).click();
+  await expect(page.getByTestId("preview")).toContainText("Corrected by staff.");
+  await expect(page.getByRole("button", { name: "Download redacted scan (PDF)" })).toHaveCount(0);
+  await expect(page.getByText(/isn't available because the text was edited/)).toBeVisible();
 });
 
 test("injection check: tampered document is red, normal policy is green", async ({ page }) => {
@@ -152,9 +194,12 @@ test("restore names within the session and explain unavailable codes", async ({ 
 
 test("batch: several files in, ZIP out", async ({ page }) => {
   await page.getByRole("tab", { name: "Many files (batch)" }).click();
-  await page.getByTestId("batch-files").setInputFiles([fixture("referral.docx"), fixture("lab-report.pdf"), fixture("scanned.pdf")]);
-  await page.getByRole("button", { name: /Remove patient details from 3 files/ }).click();
-  await expect(page.getByRole("heading", { name: "Finished" })).toBeVisible();
+  await page
+    .getByTestId("batch-files")
+    .setInputFiles([fixture("referral.docx"), fixture("lab-report.pdf"), fixture("scanned.pdf"), fixture("fax-referral.tif")]);
+  await page.getByRole("button", { name: /Remove patient details from 4 files/ }).click();
+  await expect(page.getByRole("heading", { name: "Finished" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("cell", { name: /fax-referral\.tif Read from scan/ })).toBeVisible();
   await expect(page.getByRole("cell", { name: "scanned.pdf" })).toBeVisible();
   await expect(page.getByRole("cell", { name: /Couldn't read/ })).toBeVisible();
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download ZIP" }).click()]);

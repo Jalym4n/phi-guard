@@ -16,19 +16,21 @@ def test_run_batch_mixed_files():
         ("sub/b.docx", make_docx(["SIN 123 456 782"])),
         ("c.pdf", make_pdf(["Phone (416) 555-0142"])),
         ("scan.pdf", make_pdf(None)),
-        ("photo.png", b"\x89PNG"),
+        ("photo.png", b"\x89PNG\r\n\x1a\nbroken"),
+        ("clip.mp3", b"ID3"),
         (".DS_Store", b"x"),
     ]
     seen = []
     items = run_batch(files, Redactor(mode="mask"), progress=lambda i, it: seen.append(i))
-    assert seen == [1, 2, 3, 4, 5, 6]
+    assert seen == [1, 2, 3, 4, 5, 6, 7]
     status = {it.name: it.status for it in items}
     assert status == {
         "a.txt": "done",
         "sub/b.docx": "done",
         "c.pdf": "done",
         "scan.pdf": "error",
-        "photo.png": "skipped",
+        "photo.png": "error",  # images are read with OCR now; this one is damaged
+        "clip.mp3": "skipped",
         ".DS_Store": "skipped",
     }
     a = items[0]

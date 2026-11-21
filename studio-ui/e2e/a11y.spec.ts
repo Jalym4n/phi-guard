@@ -8,6 +8,11 @@ for (const scheme of ["light", "dark"] as const) {
     test("every page has zero serious or critical axe violations", async ({ page }) => {
       await open(page);
       await expectAccessible(page, "Remove (empty)");
+      await page.getByTestId("file-input").setInputFiles(fixture("scanned-referral.pdf"));
+      await page.getByTestId("scan-notice").getByText("Show the scanned page").click();
+      await expect(page.getByAltText("Scanned page 1")).toBeVisible();
+      await expectAccessible(page, "Remove (scan loaded)");
+      await page.getByRole("button", { name: "Start over" }).first().click();
       await findDetails(page, "Patient: Eleanor Whitfield\nPhone (416) 555-0142\nMrs. Whitfield is well.");
       await expectAccessible(page, "Remove (review)");
       await page.getByRole("tab", { name: "Many files (batch)" }).click();

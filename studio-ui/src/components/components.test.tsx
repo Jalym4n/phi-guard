@@ -92,3 +92,28 @@ describe("PrivacyBadge", () => {
     expect(screen.getByText(/never connects to the internet/)).toBeInTheDocument();
   });
 });
+
+describe("ScanNotice", () => {
+  const base = { pages: 1, previews: ["data:image/jpeg;base64,AAAA"] };
+  it("warns when OCR was unsure and offers the scanned pages", async () => {
+    const { ScanNotice } = await import("./ScanNotice");
+    render(<ScanNotice file={{ ...base, ocr: { used: true, pages: [1], confidence: 0.72, low_confidence_words: 4, full_scan: true } }} />);
+    const notice = screen.getByTestId("scan-notice");
+    expect(notice).toHaveTextContent("This text was read from a scanned image");
+    expect(notice).toHaveTextContent("72% confident");
+    expect(notice).toHaveTextContent("4 words were hard to read");
+    expect(notice.className).toContain("amber");
+    await userEvent.click(screen.getByText("Show the scanned page"));
+    expect(screen.getByAltText("Scanned page 1")).toBeInTheDocument();
+  });
+  it("describes mixed documents and stays quiet for typed files", async () => {
+    const { ScanNotice } = await import("./ScanNotice");
+    const { rerender } = render(
+      <ScanNotice file={{ pages: 3, previews: [], ocr: { used: true, pages: [2, 3], confidence: 0.96, low_confidence_words: 0, full_scan: false } }} />,
+    );
+    expect(screen.getByTestId("scan-notice")).toHaveTextContent("Pages 2, 3 were read from a scanned image");
+    expect(screen.getByTestId("scan-notice").className).toContain("sky");
+    rerender(<ScanNotice file={{ pages: 1, previews: [], ocr: { used: false, pages: [], confidence: null, low_confidence_words: 0, full_scan: false } }} />);
+    expect(screen.queryByTestId("scan-notice")).toBeNull();
+  });
+});
