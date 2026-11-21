@@ -1,0 +1,17 @@
+SYNTHETIC EXAMPLE - NOT A REAL PATIENT
+
+Progress Note - Family Medicine
+Patient: Eleanor Whitfield
+DOB: 1957-04-23
+Health Card (OHIP): 5271-938-465 AB
+MRN: 00482913
+SIN on file: 123 456 782
+Phone: (416) 555-0142
+Email: e.whitfield@example.com
+Address: 48 Maple Grove Crescent, Hamilton ON L8S 4K1
+
+Mrs. Whitfield presents with a two-week history of productive cough. She
+reports metformin 500 mg twice daily and atorvastatin 20 mg nightly.
+HbA1c 7.2% on 2024-02-11. BP 132/84. Follow-up in 3 weeks.
+
+Lab portal access logged from 10.24.8.101.

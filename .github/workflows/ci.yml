@@ -1,0 +1,68 @@
+name: Python CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  core-no-deps:
+    # The core library must work with zero third-party packages.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest
+      - run: python -c "import phi_guard; print(phi_guard.__version__)"
+      - run: pytest tests/test_detectors.py tests/test_redactor.py tests/test_injection.py tests/test_dictionary.py tests/test_addresses.py tests/test_output_scan.py
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install Tesseract (OCR tests for scanned documents)
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-fra fonts-dejavu-core
+      - run: pip install -e ".[dev,studio,eval]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest --cov --cov-report=term --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: coverage-xml
+          path: coverage.xml
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: pip install -e ".[studio]"
+      - run: pip-audit --skip-editable
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t phi-guard-studio .
+      - name: Smoke test (token required, host check, non-root)
+        run: |
+          docker run -d --name pgs -p 127.0.0.1:8765:8765 phi-guard-studio
+          sleep 6
+          TOKEN=$(docker logs pgs 2>&1 | grep -o 'token=[^ ]*' | head -1 | cut -d= -f2)
+          curl -fsS -H "X-PHI-Guard-Token: $TOKEN" http://127.0.0.1:8765/api/health
+          curl -fsS -H "X-PHI-Guard-Token: $TOKEN" http://127.0.0.1:8765/api/health | grep -q '"available":true'
+          curl -fsS -H "X-PHI-Guard-Token: $TOKEN" -F "file=@studio-ui/e2e/fixtures/scanned-referral.pdf" \
+            http://127.0.0.1:8765/api/extract | grep -q Whitfield
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/health)" = 403
+          test "$(docker exec pgs id -u)" = 10001

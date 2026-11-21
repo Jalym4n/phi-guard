@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Text size setting: everything is sized in rem, so changing the root size scales the whole app.
+   Body text is never smaller than 16px. */
+html { font-size: 16px; }
+html[data-text-size="large"] { font-size: 18px; }
+html[data-text-size="larger"] { font-size: 20px; }
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+}
+
+/* Visible focus for keyboard users, everywhere. */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.dark :focus-visible { outline-color: #93c5fd; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+dialog::backdrop { background: rgb(15 23 42 / 0.55); }
+
+.doc-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; color: black; }
+}

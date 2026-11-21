@@ -1,0 +1,41 @@
+{
+  "text": {
+    "docs": 12,
+    "identifiers": 84,
+    "removed": 1.0,
+    "doc_leakage": 0.0,
+    "cer": 0.0,
+    "sec_per_page": 5.270000353145102e-07,
+    "confidence": null
+  },
+  "scan": {
+    "docs": 12,
+    "identifiers": 84,
+    "removed": 1.0,
+    "doc_leakage": 0.0,
+    "cer": 0.00013419216317767042,
+    "sec_per_page": 1.1023135022499748,
+    "confidence": 0.9534166666666666
+  },
+  "fax": {
+    "docs": 12,
+    "identifiers": 84,
+    "removed": 0.9523809523809523,
+    "doc_leakage": 0.16666666666666666,
+    "cer": 0.004260262216951903,
+    "sec_per_page": 0.812393939333333,
+    "confidence": 0.9379166666666666,
+    "visual_removed": 0.9642857142857143,
+    "visual_doc_leakage": 0.16666666666666666,
+    "boxes_match_text": 1.0
+  },
+  "bad_fax": {
+    "docs": 12,
+    "identifiers": 84,
+    "removed": 0.8571428571428572,
+    "doc_leakage": 0.75,
+    "cer": 0.01918700009052872,
+    "sec_per_page": 0.9084028967499762,
+    "confidence": 0.89825
+  }
+}
